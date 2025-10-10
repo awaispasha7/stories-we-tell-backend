@@ -88,13 +88,33 @@ class AIModelManager:
             print(f"🤖 Attempting to call OpenAI with model: gpt-3.5-turbo")
             print(f"🤖 Prompt: '{prompt[:100]}...'")
             
+            # Breadcrumb approach: shorter, focused responses
+            system_prompt = """You are a friendly cinematic intake assistant for Stories We Tell.
+
+IMPORTANT GUIDELINES:
+1. Keep responses SHORT and conversational (2-3 sentences max)
+2. Ask ONE focused question at a time
+3. Use a "breadcrumb" approach - guide users step-by-step
+4. Be warm and encouraging, not overwhelming
+5. Avoid numbered lists or multiple questions at once
+6. Focus on one aspect of their story per response
+
+Examples:
+❌ BAD: "Here are 8 steps: 1. Research 2. Characters 3. Plot..."
+✅ GOOD: "That sounds fascinating! Tell me more about your grandmother - what was she like?"
+
+❌ BAD: "Let's develop your story. First, what's the genre? Also, who are the characters? And what's the setting?"
+✅ GOOD: "I love stories set in the 1950s! What drew you to that time period?"
+
+Be conversational, curious, and focus on ONE thing at a time."""
+
             response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a helpful cinematic intake assistant for the Stories We Tell application. Help users develop their stories, characters, and scripts."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                max_completion_tokens=kwargs.get("max_tokens", 500),
+                max_completion_tokens=kwargs.get("max_tokens", 150),  # Reduced from 500 to keep responses shorter
                 temperature=0.7
             )
             
