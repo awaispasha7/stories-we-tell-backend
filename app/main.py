@@ -39,3 +39,4 @@ async def shutdown():
     You can add cleanup tasks here if needed.
     """
     print("Shutting down FastAPI application...")
+
