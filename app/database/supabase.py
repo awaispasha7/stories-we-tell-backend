@@ -7,7 +7,7 @@ load_dotenv()
 
 # Configuration for Supabase and other API keys
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Supabase client initialization
