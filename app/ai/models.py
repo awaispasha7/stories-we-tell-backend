@@ -212,3 +212,4 @@ class AIModelManager:
 
 # Global instance
 ai_manager = AIModelManager()
+
