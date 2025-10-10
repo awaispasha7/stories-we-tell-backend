@@ -9,7 +9,11 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Frontend URLs
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "https://stories-we-tell.vercel.app"  # Production frontend URL
+    ],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
@@ -17,6 +21,20 @@ app.add_middleware(
 
 # Include the chat route
 app.include_router(chat.router)
+
+# Add root route to handle 404 errors
+@app.get("/")
+async def root():
+    return {"message": "Stories We Tell Backend API", "status": "running"}
+
+# Add favicon routes to handle 404 errors
+@app.get("/favicon.ico")
+async def favicon():
+    return {"message": "Favicon not found"}
+
+@app.get("/favicon.png")
+async def favicon_png():
+    return {"message": "Favicon not found"}
 
 @app.on_event("startup")
 async def startup():
