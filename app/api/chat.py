@@ -221,4 +221,3 @@ async def get_dossier():
             }
         ]
     }
-
