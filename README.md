@@ -292,3 +292,4 @@ The application logs connection status and errors to the console. Look for:
 ## License
 
 This project is part of the Stories We Tell application suite.
+
