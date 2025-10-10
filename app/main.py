@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat  # Import the chat routes
+from app.api import chat, upload  # Import the chat and upload routes
 from app.database.supabase import get_supabase_client  # Import the Supabase client
 
 # Initialize FastAPI app
@@ -21,6 +21,9 @@ app.add_middleware(
 
 # Include the chat route
 app.include_router(chat.router)
+
+# Include the upload route
+app.include_router(upload.router)
 
 # Add root route to handle 404 errors
 @app.get("/")
