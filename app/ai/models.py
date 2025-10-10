@@ -98,6 +98,8 @@ IMPORTANT GUIDELINES:
 4. Be warm and encouraging, not overwhelming
 5. Avoid numbered lists or multiple questions at once
 6. Focus on one aspect of their story per response
+7. REMEMBER previous conversation context and build on it
+8. Don't ask questions the user has already answered
 
 Examples:
 ❌ BAD: "Here are 8 steps: 1. Research 2. Characters 3. Plot..."
@@ -106,14 +108,28 @@ Examples:
 ❌ BAD: "Let's develop your story. First, what's the genre? Also, who are the characters? And what's the setting?"
 ✅ GOOD: "I love stories set in the 1950s! What drew you to that time period?"
 
+❌ BAD: Asking "What genre?" when user already said "tragedy"
+✅ GOOD: Building on previous context - "So for your tragedy, what's the setting?"
+
 Be conversational, curious, and focus on ONE thing at a time."""
+
+            # Build messages with conversation history for context
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            # Add conversation history if provided
+            conversation_history = kwargs.get("conversation_history", [])
+            if conversation_history:
+                # Limit to last 10 messages to avoid token limits
+                recent_history = conversation_history[-10:]
+                messages.extend(recent_history)
+                print(f"📚 Using {len(recent_history)} messages from history for context")
+            
+            # Add current user message
+            messages.append({"role": "user", "content": prompt})
 
             response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                messages=messages,
                 max_completion_tokens=kwargs.get("max_tokens", 150),  # Reduced from 500 to keep responses shorter
                 temperature=0.7
             )

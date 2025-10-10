@@ -25,10 +25,23 @@ async def rewrite_ask(chat_request: ChatRequest):
         try:
             print(f"🟡 Starting AI response generation for: '{text[:50]}...'")
             
-            # Generate response using GPT-3.5-turbo for chat
+            # Get or create session
+            session_id = "default_session"
+            if session_id not in conversation_sessions:
+                conversation_sessions[session_id] = {
+                    "project_id": str(uuid.uuid4()),
+                    "history": []
+                }
+            
+            # Get conversation history for context
+            conversation_history = conversation_sessions[session_id]["history"]
+            print(f"📚 Conversation history length: {len(conversation_history)} messages")
+            
+            # Generate response using GPT-3.5-turbo for chat WITH CONTEXT
             ai_response = await ai_manager.generate_response(
                 task_type=TaskType.CHAT,
                 prompt=text,
+                conversation_history=conversation_history,  # Pass history for context
                 max_tokens=500,
                 temperature=0.7
             )
