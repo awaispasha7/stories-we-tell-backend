@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from app.models import ChatRequest, ChatResponse  # Import Pydantic models
 from app.database.supabase import get_supabase_client
 from app.ai.models import ai_manager, TaskType
+from app.ai.dossier_extractor import dossier_extractor
 import uuid
 import os
 import json
@@ -11,6 +12,9 @@ from dotenv import load_dotenv
 
 router = APIRouter()
 load_dotenv()
+
+# In-memory conversation storage (in production, use Redis or database)
+conversation_sessions = {}
 
 @router.post("/chat")
 async def rewrite_ask(chat_request: ChatRequest):
@@ -56,7 +60,21 @@ async def rewrite_ask(chat_request: ChatRequest):
 
             # Send final metadata
             turn_id = str(uuid.uuid4())
-            project_id = str(uuid.uuid4())
+            # Use session-based project_id (persist across requests)
+            session_id = "default_session"  # In production, use user session/cookie
+            if session_id not in conversation_sessions:
+                conversation_sessions[session_id] = {
+                    "project_id": str(uuid.uuid4()),
+                    "history": []
+                }
+            
+            project_id = conversation_sessions[session_id]["project_id"]
+            
+            # Add to conversation history
+            conversation_sessions[session_id]["history"].extend([
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": reply}
+            ])
             
             # Metadata to send to frontend
             metadata = {
@@ -87,6 +105,31 @@ async def rewrite_ask(chat_request: ChatRequest):
                     response = supabase.table("turns").insert([db_record]).execute()
                     if not response.data:
                         print("Warning: Failed to store chat metadata in Supabase")
+                    
+                    # Update dossier if needed
+                    conversation_history = conversation_sessions[session_id]["history"]
+                    if dossier_extractor.should_update_dossier(conversation_history):
+                        print("📊 Updating dossier...")
+                        dossier_data = await dossier_extractor.extract_metadata(conversation_history)
+                        
+                        # Upsert dossier (insert or update)
+                        dossier_record = {
+                            "project_id": project_id,
+                            "snapshot_json": dossier_data
+                        }
+                        
+                        # Try to update first, then insert if not exists
+                        existing = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+                        
+                        if existing.data and len(existing.data) > 0:
+                            # Update existing
+                            supabase.table("dossier").update(dossier_record).eq("project_id", project_id).execute()
+                            print(f"✅ Updated dossier for project {project_id}")
+                        else:
+                            # Insert new
+                            supabase.table("dossier").insert([dossier_record]).execute()
+                            print(f"✅ Created dossier for project {project_id}")
+                    
                 except Exception as db_error:
                     print(f"Database error (non-critical): {str(db_error)}")
 
@@ -180,44 +223,46 @@ async def generate_scene(chat_request: ChatRequest):
     }
 
 @router.get("/dossier")
-async def get_dossier():
-    """Get current story dossier data"""
-    # For now, return mock data. In a real app, this would fetch from database
-    return {
-        "title": "Untitled Story",
-        "logline": "A compelling story waiting to be told...",
-        "genre": "Drama",
-        "tone": "Intimate",
-        "scenes": [
-            {
-                "scene_id": "1",
-                "one_liner": "Opening scene - character introduction",
-                "description": "The protagonist is introduced in their everyday world",
-                "time_of_day": "Morning",
-                "interior_exterior": "Interior",
-                "tone": "Calm"
-            },
-            {
-                "scene_id": "2", 
-                "one_liner": "Inciting incident",
-                "description": "Something happens that changes everything",
-                "time_of_day": "Afternoon",
-                "interior_exterior": "Exterior",
-                "tone": "Tense"
-            }
-        ],
-        "characters": [
-            {
-                "character_id": "1",
-                "name": "Protagonist",
-                "description": "Main character with a clear goal"
-            }
-        ],
-        "locations": [
-            {
-                "location_id": "1",
-                "name": "Home",
-                "description": "The protagonist's starting point"
-            }
-        ]
-    }
+async def get_dossier(project_id: str = None):
+    """Get current story dossier data from Supabase"""
+    try:
+        supabase = get_supabase_client()
+        
+        # If no project_id provided, try to get the default session's project
+        if not project_id:
+            session_id = "default_session"
+            if session_id in conversation_sessions:
+                project_id = conversation_sessions[session_id]["project_id"]
+        
+        if project_id:
+            # Fetch from database
+            response = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+            
+            if response.data and len(response.data) > 0:
+                dossier_data = response.data[0]["snapshot_json"]
+                print(f"✅ Retrieved dossier for project {project_id}")
+                return dossier_data
+        
+        # Return default data if no dossier found
+        return {
+            "title": "Untitled Story",
+            "logline": "A compelling story waiting to be told...",
+            "genre": "Unknown",
+            "tone": "Unknown",
+            "scenes": [],
+            "characters": [],
+            "locations": []
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fetching dossier: {str(e)}")
+        # Return default data on error
+        return {
+            "title": "Untitled Story",
+            "logline": "A compelling story waiting to be told...",
+            "genre": "Unknown",
+            "tone": "Unknown",
+            "scenes": [],
+            "characters": [],
+            "locations": []
+        }
