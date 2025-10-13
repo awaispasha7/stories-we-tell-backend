@@ -33,7 +33,37 @@ async def rewrite_ask(chat_request: ChatRequest):
     text = chat_request.text
     print(f"🔵 Received chat request: '{text[:100]}...'")
 
-    async def generate_stream():
+    try:
+        # Simple fallback response for now
+        reply = f"I received your message: '{text}'. I'm currently having trouble connecting to my AI backend, but I'm here to help with your story development! What kind of story are you working on?"
+        
+        return {
+            "reply": reply,
+            "metadata": {
+                "turn_id": str(uuid.uuid4()),
+                "project_id": "default",
+                "raw_text": text,
+                "response_text": reply,
+                "ai_model": "fallback",
+                "tokens_used": 0
+            }
+        }
+    except Exception as e:
+        print(f"❌ Chat API error: {str(e)}")
+        return {
+            "reply": f"Error: {str(e)}",
+            "metadata": {
+                "turn_id": str(uuid.uuid4()),
+                "project_id": "error",
+                "raw_text": text,
+                "response_text": f"Error: {str(e)}",
+                "ai_model": "error",
+                "tokens_used": 0
+            }
+        }
+
+# Old complex chat endpoint (commented out for now)
+async def old_chat_endpoint():
         try:
             print(f"🟡 Starting AI response generation for: '{text[:50]}...'")
             
