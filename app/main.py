@@ -1,7 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import chat, upload, transcribe  # Import the chat, upload, and transcribe routes
-from app.database.supabase import get_supabase_client  # Import the Supabase client
+# Import the Supabase client (with error handling)
+try:
+    from app.database.supabase import get_supabase_client
+    SUPABASE_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Supabase not available: {e}")
+    SUPABASE_AVAILABLE = False
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -61,11 +67,15 @@ async def startup():
     """
     try:
         print("Starting up FastAPI application...")
-        # Try to get the Supabase client and check if the connection is successful
-        supabase = get_supabase_client()
-        print("Connected to Supabase!")
+        if SUPABASE_AVAILABLE:
+            # Try to get the Supabase client and check if the connection is successful
+            supabase = get_supabase_client()
+            print("Connected to Supabase!")
+        else:
+            print("Supabase not available - running without database")
     except Exception as e:
-        print(f"Error connecting to Supabase: {e}")
+        print(f"Warning: Error connecting to Supabase: {e}")
+        print("Application will continue to run without database connection")
 
 @app.on_event("shutdown")
 async def shutdown():

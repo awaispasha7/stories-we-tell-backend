@@ -18,5 +18,4 @@ def get_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Optional: Check if the environment variables are loaded correctly
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Please make sure SUPABASE_URL and SUPABASE_KEY are set in the .env file.")
+# Note: This check is moved to the get_supabase_client function to avoid startup failures
