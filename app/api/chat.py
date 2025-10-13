@@ -2,8 +2,17 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models import ChatRequest, ChatResponse  # Import Pydantic models
 # from app.database.supabase import get_supabase_client
-# from app.ai.models import ai_manager, TaskType
-# from app.ai.dossier_extractor import dossier_extractor
+# Try to import AI components with error handling
+try:
+    from app.ai.models import ai_manager, TaskType
+    from app.ai.dossier_extractor import dossier_extractor
+    AI_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: AI components not available: {e}")
+    AI_AVAILABLE = False
+    ai_manager = None
+    TaskType = None
+    dossier_extractor = None
 import uuid
 import os
 import json
@@ -46,14 +55,23 @@ async def rewrite_ask(chat_request: ChatRequest):
             conversation_history = conversation_sessions[session_id]["history"]
             print(f"📚 Conversation history length: {len(conversation_history)} messages")
             
-            # Generate response using gpt-4o-mini for chat WITH CONTEXT
-            ai_response = await ai_manager.generate_response(
-                task_type=TaskType.CHAT,
-                prompt=text,
-                conversation_history=conversation_history,  # Pass history for context
-                max_tokens=500,
-                temperature=0.7
-            )
+            # Check if AI is available
+            if not AI_AVAILABLE or ai_manager is None:
+                print("⚠️ AI not available, returning fallback response")
+                ai_response = {
+                    "response": f"I received your message: '{text}'. I'm currently having trouble connecting to my AI backend, but I'm here to help with your story development! What kind of story are you working on?",
+                    "model_used": "fallback",
+                    "tokens_used": 0
+                }
+            else:
+                # Generate response using gpt-4o-mini for chat WITH CONTEXT
+                ai_response = await ai_manager.generate_response(
+                    task_type=TaskType.CHAT,
+                    prompt=text,
+                    conversation_history=conversation_history,  # Pass history for context
+                    max_tokens=500,
+                    temperature=0.7
+                )
 
             print(f"🟢 AI Response received: {ai_response}")
             
@@ -99,7 +117,7 @@ async def rewrite_ask(chat_request: ChatRequest):
             ])
             
             # Metadata to send to frontend
-            metadata = {
+    metadata = {
                 "turn_id": turn_id,
                 "project_id": project_id,
                 "raw_text": text,
@@ -116,7 +134,7 @@ async def rewrite_ask(chat_request: ChatRequest):
                     db_record = {
                         "turn_id": turn_id,
                         "project_id": project_id,
-                        "raw_text": text,
+        "raw_text": text,
                         "normalized_json": {
                             "response_text": reply,
                             "ai_model": model_used,
@@ -130,7 +148,7 @@ async def rewrite_ask(chat_request: ChatRequest):
                     
                     # Update dossier if needed
                     conversation_history = conversation_sessions[session_id]["history"]
-                    if dossier_extractor.should_update_dossier(conversation_history):
+                    if AI_AVAILABLE and dossier_extractor and dossier_extractor.should_update_dossier(conversation_history):
                         print("📊 Updating dossier...")
                         dossier_data = await dossier_extractor.extract_metadata(conversation_history)
                         
