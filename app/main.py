@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat  # Import the chat route
-# from app.api import upload, transcribe  # Import the upload and transcribe routes
+from app.api import chat, transcribe  # Import the chat and transcribe routes
+# from app.api import upload  # Import the upload route
 # Import the Supabase client (with error handling)
 try:
     from app.database.supabase import get_supabase_client
@@ -34,7 +34,7 @@ app.include_router(chat.router)
 # app.include_router(upload.router)
 
 # Include the transcribe route
-# app.include_router(transcribe.router)
+app.include_router(transcribe.router)
 
 # Add root route to handle 404 errors
 @app.get("/")
