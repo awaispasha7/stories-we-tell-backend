@@ -78,7 +78,7 @@ Respond ONLY with valid JSON in this exact format:
         try:
             # Call OpenAI to extract metadata
             response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",

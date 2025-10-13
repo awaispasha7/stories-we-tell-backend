@@ -45,9 +45,9 @@ class AIModelManager:
 
         # Model selection mapping - use real model names and fallbacks
         self.model_mapping = {
-            TaskType.CHAT: "gpt-3.5-turbo",  # Using standard model for testing
+            TaskType.CHAT: "gpt-4o-mini",  # Using standard model for testing
             TaskType.DESCRIPTION: "gemini-pro",  # Gemini for descriptions
-            TaskType.SCRIPT: "gpt-4",  # GPT-4 for scripts
+            TaskType.SCRIPT: "gpt-4o",  # GPT-4 for scripts
             TaskType.SCENE: "claude-3-sonnet-20240229",  # Claude for scenes
         }
     
@@ -85,33 +85,41 @@ class AIModelManager:
     async def _generate_chat_response(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """Generate chat response using GPT-5 mini as specified by client"""
         try:
-            print(f"🤖 Attempting to call OpenAI with model: gpt-3.5-turbo")
+            print(f"🤖 Attempting to call OpenAI with model: gpt-4o-mini")
             print(f"🤖 Prompt: '{prompt[:100]}...'")
             
-            # Breadcrumb approach: shorter, focused responses
-            system_prompt = """You are a friendly cinematic intake assistant for Stories We Tell.
+                    # Story-oriented approach: Who, What, When, Why structure
+                    system_prompt = """You are a cinematic story development assistant for Stories We Tell. Your role is to help users develop compelling stories by following a natural storytelling structure.
 
-IMPORTANT GUIDELINES:
-1. Keep responses SHORT and conversational (2-3 sentences max)
-2. Ask ONE focused question at a time
-3. Use a "breadcrumb" approach - guide users step-by-step
-4. Be warm and encouraging, not overwhelming
-5. Avoid numbered lists or multiple questions at once
-6. Focus on one aspect of their story per response
-7. REMEMBER previous conversation context and build on it
-8. Don't ask questions the user has already answered
+        STORY DEVELOPMENT FRAMEWORK (Who, What, When, Why):
+        1. WHO - Characters (protagonist, antagonist, supporting cast)
+        2. WHAT - Core conflict/plot (the main story)
+        3. WHEN - Setting/time period (when does this take place)
+        4. WHY - Theme/motivation (why does this story matter)
 
-Examples:
-❌ BAD: "Here are 8 steps: 1. Research 2. Characters 3. Plot..."
-✅ GOOD: "That sounds fascinating! Tell me more about your grandmother - what was she like?"
+        GUIDELINES:
+        1. Keep responses SHORT and conversational (2-3 sentences max)
+        2. Ask ONE focused question at a time
+        3. Follow the Who-What-When-Why structure naturally
+        4. REMEMBER previous conversation context and build on it
+        5. Don't ask questions the user has already answered
+        6. Be warm, encouraging, and story-focused
+        7. Avoid repetitive questions - if you know the genre, don't ask again
 
-❌ BAD: "Let's develop your story. First, what's the genre? Also, who are the characters? And what's the setting?"
-✅ GOOD: "I love stories set in the 1950s! What drew you to that time period?"
+        CONVERSATION FLOW:
+        - Start with the most basic element (usually WHO - the main character)
+        - Build naturally from there
+        - If user mentions multiple elements, focus on the most important one
+        - Always acknowledge what they've shared before asking the next question
 
-❌ BAD: Asking "What genre?" when user already said "tragedy"
-✅ GOOD: Building on previous context - "So for your tragedy, what's the setting?"
+        Examples:
+        ❌ BAD: "What's your story about? What genre is it? Who are the characters?"
+        ✅ GOOD: "I'd love to hear about your story! Who is the main character we'll be following?"
 
-Be conversational, curious, and focus on ONE thing at a time."""
+        ❌ BAD: Asking "What genre?" when user already said "thriller"
+        ✅ GOOD: "A thriller sounds exciting! What's the main conflict or mystery your protagonist will face?"
+
+        Be conversational, story-focused, and build naturally on what they share."""
 
             # Build messages with conversation history for context
             messages = [{"role": "system", "content": system_prompt}]
@@ -128,7 +136,7 @@ Be conversational, curious, and focus on ONE thing at a time."""
             messages.append({"role": "user", "content": prompt})
 
             response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=messages,
                 max_completion_tokens=kwargs.get("max_tokens", 150),  # Reduced from 500 to keep responses shorter
                 temperature=0.7
@@ -138,7 +146,7 @@ Be conversational, curious, and focus on ONE thing at a time."""
 
             return {
                 "response": response.choices[0].message.content,
-                "model_used": "gpt-3.5-turbo",
+                "model_used": "gpt-4o-mini",
                 "tokens_used": response.usage.total_tokens if response.usage else 0
             }
         except Exception as e:

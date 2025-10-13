@@ -37,7 +37,7 @@ async def rewrite_ask(chat_request: ChatRequest):
             conversation_history = conversation_sessions[session_id]["history"]
             print(f"📚 Conversation history length: {len(conversation_history)} messages")
             
-            # Generate response using GPT-3.5-turbo for chat WITH CONTEXT
+            # Generate response using gpt-4o-mini for chat WITH CONTEXT
             ai_response = await ai_manager.generate_response(
                 task_type=TaskType.CHAT,
                 prompt=text,
