@@ -1,14 +1,23 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models import ChatRequest, ChatResponse  # Import Pydantic models
-from app.database.supabase import get_supabase_client
-from app.ai.models import ai_manager, TaskType
-from app.ai.dossier_extractor import dossier_extractor
+# from app.database.supabase import get_supabase_client
+# from app.ai.models import ai_manager, TaskType
+# from app.ai.dossier_extractor import dossier_extractor
 import uuid
 import os
 import json
 import asyncio
 from dotenv import load_dotenv
+
+# Try to import Supabase client with error handling
+try:
+    from app.database.supabase import get_supabase_client
+    SUPABASE_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Supabase not available: {e}")
+    SUPABASE_AVAILABLE = False
+    get_supabase_client = None
 
 router = APIRouter()
 load_dotenv()
@@ -239,29 +248,29 @@ async def generate_scene(chat_request: ChatRequest):
 async def get_dossier(project_id: str = None):
     """Get current story dossier data from Supabase"""
     try:
-        # Try to get Supabase client, but don't fail if not available
-        try:
-            supabase = get_supabase_client()
-            supabase_available = True
-        except Exception as supabase_error:
-            print(f"⚠️ Supabase not available: {supabase_error}")
-            supabase_available = False
+        # Check if Supabase is available
+        supabase_available = SUPABASE_AVAILABLE and get_supabase_client is not None
         
         if supabase_available:
-            # If no project_id provided, try to get the default session's project
-            if not project_id:
-                session_id = "default_session"
-                if session_id in conversation_sessions:
-                    project_id = conversation_sessions[session_id]["project_id"]
-            
-            if project_id:
-                # Fetch from database
-                response = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+            try:
+                supabase = get_supabase_client()
+                # If no project_id provided, try to get the default session's project
+                if not project_id:
+                    session_id = "default_session"
+                    if session_id in conversation_sessions:
+                        project_id = conversation_sessions[session_id]["project_id"]
                 
-                if response.data and len(response.data) > 0:
-                    dossier_data = response.data[0]["snapshot_json"]
-                    print(f"✅ Retrieved dossier for project {project_id}")
-                    return dossier_data
+                if project_id:
+                    # Fetch from database
+                    response = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+                    
+                    if response.data and len(response.data) > 0:
+                        dossier_data = response.data[0]["snapshot_json"]
+                        print(f"✅ Retrieved dossier for project {project_id}")
+                        return dossier_data
+            except Exception as supabase_error:
+                print(f"⚠️ Supabase error: {supabase_error}")
+                supabase_available = False
         
         # Return default data if no dossier found or Supabase not available
         print("📝 Returning default dossier data")
