@@ -12,10 +12,11 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000", 
         "http://127.0.0.1:3000",
-        "https://stories-we-tell.vercel.app"  # Production frontend URL
+        "https://stories-we-tell.vercel.app",  # Production frontend URL
+        "https://stories-we-tell-backend.vercel.app"  # Backend URL for testing
     ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Explicit methods
     allow_headers=["*"],  # Allow all headers
 )
 
@@ -32,6 +33,16 @@ app.include_router(transcribe.router)
 @app.get("/")
 async def root():
     return {"message": "Stories We Tell Backend API", "status": "running"}
+
+# Add health check endpoint
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "message": "Backend is running",
+        "cors_enabled": True,
+        "endpoints": ["/chat", "/dossier", "/transcribe", "/upload"]
+    }
 
 # Add favicon routes to handle 404 errors
 @app.get("/favicon.ico")
