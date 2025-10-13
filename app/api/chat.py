@@ -239,24 +239,32 @@ async def generate_scene(chat_request: ChatRequest):
 async def get_dossier(project_id: str = None):
     """Get current story dossier data from Supabase"""
     try:
-        supabase = get_supabase_client()
+        # Try to get Supabase client, but don't fail if not available
+        try:
+            supabase = get_supabase_client()
+            supabase_available = True
+        except Exception as supabase_error:
+            print(f"⚠️ Supabase not available: {supabase_error}")
+            supabase_available = False
         
-        # If no project_id provided, try to get the default session's project
-        if not project_id:
-            session_id = "default_session"
-            if session_id in conversation_sessions:
-                project_id = conversation_sessions[session_id]["project_id"]
-        
-        if project_id:
-            # Fetch from database
-            response = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+        if supabase_available:
+            # If no project_id provided, try to get the default session's project
+            if not project_id:
+                session_id = "default_session"
+                if session_id in conversation_sessions:
+                    project_id = conversation_sessions[session_id]["project_id"]
             
-            if response.data and len(response.data) > 0:
-                dossier_data = response.data[0]["snapshot_json"]
-                print(f"✅ Retrieved dossier for project {project_id}")
-                return dossier_data
+            if project_id:
+                # Fetch from database
+                response = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+                
+                if response.data and len(response.data) > 0:
+                    dossier_data = response.data[0]["snapshot_json"]
+                    print(f"✅ Retrieved dossier for project {project_id}")
+                    return dossier_data
         
-        # Return default data if no dossier found
+        # Return default data if no dossier found or Supabase not available
+        print("📝 Returning default dossier data")
         return {
             "title": "Untitled Story",
             "logline": "A compelling story waiting to be told...",
