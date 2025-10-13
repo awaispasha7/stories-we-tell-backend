@@ -2,17 +2,11 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models import ChatRequest, ChatResponse  # Import Pydantic models
 # from app.database.supabase import get_supabase_client
-# Try to import AI components with error handling
-try:
-    from app.ai.models import ai_manager, TaskType
-    from app.ai.dossier_extractor import dossier_extractor
-    AI_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: AI components not available: {e}")
-    AI_AVAILABLE = False
-    ai_manager = None
-    TaskType = None
-    dossier_extractor = None
+# AI components are temporarily disabled to prevent deployment issues
+AI_AVAILABLE = False
+ai_manager = None
+TaskType = None
+dossier_extractor = None
 import uuid
 import os
 import json
