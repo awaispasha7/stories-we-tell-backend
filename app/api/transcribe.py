@@ -42,8 +42,14 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
             temp_file_path = temp_file.name
         
         try:
+            # Check if OpenAI API key is available
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                print("❌ OpenAI API key not found")
+                raise HTTPException(status_code=500, detail="OpenAI API key not configured")
+            
             # Initialize OpenAI client
-            openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            openai_client = openai.OpenAI(api_key=api_key)
             
             # Transcribe using Whisper
             print("🎤 Sending audio to OpenAI Whisper...")
@@ -68,13 +74,17 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
             
         except openai.APIError as e:
             print(f"❌ OpenAI API error: {e}")
+            print(f"❌ Error type: {type(e)}")
+            print(f"❌ Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details'}")
             # Clean up temporary file
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
-            raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
             
         except Exception as e:
             print(f"❌ Transcription error: {e}")
+            print(f"❌ Error type: {type(e)}")
+            print(f"❌ Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details'}")
             # Clean up temporary file
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
