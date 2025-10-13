@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat, upload, transcribe  # Import the chat, upload, and transcribe routes
+# from app.api import chat, upload, transcribe  # Import the chat, upload, and transcribe routes
 # Import the Supabase client (with error handling)
 try:
     from app.database.supabase import get_supabase_client
@@ -27,13 +27,13 @@ app.add_middleware(
 )
 
 # Include the chat route
-app.include_router(chat.router)
+# app.include_router(chat.router)
 
 # Include the upload route
-app.include_router(upload.router)
+# app.include_router(upload.router)
 
 # Include the transcribe route
-app.include_router(transcribe.router)
+# app.include_router(transcribe.router)
 
 # Add root route to handle 404 errors
 @app.get("/")
@@ -49,6 +49,11 @@ async def health_check():
         "cors_enabled": True,
         "endpoints": ["/chat", "/dossier", "/transcribe", "/upload"]
     }
+
+# Add simple test endpoint
+@app.get("/test")
+async def test_endpoint():
+    return {"message": "Test endpoint working", "status": "ok"}
 
 # Add favicon routes to handle 404 errors
 @app.get("/favicon.ico")
