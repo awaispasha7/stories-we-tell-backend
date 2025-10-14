@@ -299,8 +299,16 @@ async def get_dossier(project_id: str = None):
                         project_id = conversation_sessions[session_id]["project_id"]
                         print(f"🔍 Using project_id from session: {project_id}")
                     else:
-                        print("🔍 No session found, using default project_id")
-                        project_id = "default_project"
+                        print("🔍 No session found, creating default session")
+                        # Create a default session with a proper UUID
+                        import uuid
+                        default_project_id = str(uuid.uuid4())
+                        conversation_sessions[session_id] = {
+                            "project_id": default_project_id,
+                            "history": []
+                        }
+                        project_id = default_project_id
+                        print(f"🔍 Created default session with project_id: {project_id}")
                 
                 if project_id:
                     print(f"🔍 Fetching dossier from database for project: {project_id}")
