@@ -161,14 +161,18 @@ async def rewrite_ask(chat_request: ChatRequest):
                             "snapshot_json": dossier_data
                         }
 
+                        print(f"🔍 Checking existing dossier for project {project_id}")
                         existing = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+                        print(f"🔍 Existing dossier data: {existing.data}")
 
                         if existing.data and len(existing.data) > 0:
-                            supabase.table("dossier").update(dossier_record).eq("project_id", project_id).execute()
-                            print(f"✅ Updated dossier for project {project_id}")
+                            print(f"🔍 Updating existing dossier record")
+                            update_response = supabase.table("dossier").update(dossier_record).eq("project_id", project_id).execute()
+                            print(f"✅ Updated dossier for project {project_id}: {update_response.data}")
                         else:
-                            supabase.table("dossier").insert([dossier_record]).execute()
-                            print(f"✅ Created dossier for project {project_id}")
+                            print(f"🔍 Creating new dossier record")
+                            insert_response = supabase.table("dossier").insert([dossier_record]).execute()
+                            print(f"✅ Created dossier for project {project_id}: {insert_response.data}")
 
                 except Exception as db_error:
                     print(f"Database error (non-critical): {str(db_error)}")
@@ -278,9 +282,12 @@ async def rewrite_ask(chat_request: ChatRequest):
 @router.get("/dossier")
 async def get_dossier(project_id: str = None):
     """Get current story dossier data from Supabase"""
+    print(f"🔍 Fetching dossier for project_id: {project_id}")
+    
     try:
         # Check if Supabase is available
         supabase_available = SUPABASE_AVAILABLE and get_supabase_client is not None
+        print(f"🔍 Supabase available: {supabase_available}")
         
         if supabase_available:
             try:
@@ -290,21 +297,34 @@ async def get_dossier(project_id: str = None):
                     session_id = "default_session"
                     if session_id in conversation_sessions:
                         project_id = conversation_sessions[session_id]["project_id"]
+                        print(f"🔍 Using project_id from session: {project_id}")
+                    else:
+                        print("🔍 No session found, using default project_id")
+                        project_id = "default_project"
                 
                 if project_id:
+                    print(f"🔍 Fetching dossier from database for project: {project_id}")
                     # Fetch from database
                     response = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
                     
+                    print(f"🔍 Database response: {response.data}")
+                    
                     if response.data and len(response.data) > 0:
                         dossier_data = response.data[0]["snapshot_json"]
-                        print(f"✅ Retrieved dossier for project {project_id}")
+                        print(f"✅ Retrieved dossier for project {project_id}: {dossier_data}")
                         return dossier_data
+                    else:
+                        print(f"🔍 No dossier found for project {project_id}")
+                else:
+                    print("🔍 No project_id available")
+                    
             except Exception as supabase_error:
                 print(f"⚠️ Supabase error: {supabase_error}")
+                # Don't immediately fall back - try to return cached data if available
                 supabase_available = False
         
-        # Return default data if no dossier found or Supabase not available
-        print("📝 Returning default dossier data")
+        # Only return default data if we truly have no data
+        print("📝 No dossier data found, returning default structure")
         return {
             "title": "Untitled Story",
             "logline": "A compelling story waiting to be told...",
@@ -316,11 +336,11 @@ async def get_dossier(project_id: str = None):
         }
         
     except Exception as e:
-        print(f"❌ Error fetching dossier: {str(e)}")
-        # Return default data on error
+        print(f"❌ Critical error fetching dossier: {str(e)}")
+        # Return a more informative error structure
         return {
-            "title": "Untitled Story",
-            "logline": "A compelling story waiting to be told...",
+            "title": "Error Loading Dossier",
+            "logline": "Unable to load story information",
             "genre": "Unknown",
             "tone": "Unknown",
             "scenes": [],
