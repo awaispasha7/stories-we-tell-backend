@@ -88,8 +88,8 @@ class AIModelManager:
             print(f"🤖 Attempting to call OpenAI with model: gpt-4o-mini")
             print(f"🤖 Prompt: '{prompt[:100]}...'")
             
-                    # Story-oriented approach: Who, What, When, Why structure
-                    system_prompt = """You are a cinematic story development assistant for Stories We Tell. Your role is to help users develop compelling stories by following a natural storytelling structure.
+            # Story-oriented approach: Who, What, When, Why structure
+            system_prompt = """You are a cinematic story development assistant for Stories We Tell. Your role is to help users develop compelling stories by following a natural storytelling structure.
 
         STORY DEVELOPMENT FRAMEWORK (Who, What, When, Why):
         1. WHO - Characters (protagonist, antagonist, supporting cast)
