@@ -1,9 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models import ChatRequest, ChatResponse  # Import Pydantic models
-from app.database.supabase import get_supabase_client
-from app.ai.models import ai_manager, TaskType
-from app.ai.dossier_extractor import dossier_extractor
 import uuid
 import os
 import json
@@ -18,6 +15,18 @@ except Exception as e:
     print(f"Warning: Supabase not available: {e}")
     SUPABASE_AVAILABLE = False
     get_supabase_client = None
+
+# Try to import AI components with error handling
+try:
+    from app.ai.models import ai_manager, TaskType
+    from app.ai.dossier_extractor import dossier_extractor
+    AI_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: AI components not available: {e}")
+    AI_AVAILABLE = False
+    ai_manager = None
+    TaskType = None
+    dossier_extractor = None
 
 router = APIRouter()
 load_dotenv()
@@ -47,7 +56,7 @@ async def rewrite_ask(chat_request: ChatRequest):
             print(f"📚 Conversation history length: {len(conversation_history)} messages")
 
             # Check if AI is available
-            if ai_manager is None or TaskType is None:
+            if not AI_AVAILABLE or ai_manager is None or TaskType is None:
                 print("⚠️ AI not available, using fallback response")
                 reply = f"I received your message: '{text}'. I'm currently having trouble connecting to my AI backend, but I'm here to help with your story development! What kind of story are you working on?"
                 model_used = "fallback"
@@ -127,7 +136,7 @@ async def rewrite_ask(chat_request: ChatRequest):
                         print("Warning: Failed to store chat metadata in Supabase")
 
                     # Update dossier if needed (if AI components are available)
-                    if dossier_extractor is not None and dossier_extractor.should_update_dossier(conversation_history):
+                    if AI_AVAILABLE and dossier_extractor is not None and dossier_extractor.should_update_dossier(conversation_history):
                         print("📊 Updating dossier...")
                         dossier_data = await dossier_extractor.extract_metadata(conversation_history)
 
