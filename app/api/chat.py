@@ -144,14 +144,14 @@ async def rewrite_ask(chat_request: ChatRequest):
                     print(f"🔍 AI_AVAILABLE: {AI_AVAILABLE}, dossier_extractor: {dossier_extractor is not None}")
                     
                     if AI_AVAILABLE and dossier_extractor is not None:
-                        should_update = dossier_extractor.should_update_dossier(conversation_history)
+                        should_update = await dossier_extractor.should_update_dossier(conversation_history)
                         print(f"🔍 Should update dossier: {should_update}")
                         if should_update:
                             print("📊 Updating dossier using AI extractor...")
                             dossier_data = await dossier_extractor.extract_metadata(conversation_history)
                             print(f"📊 Dossier data extracted: {dossier_data}")
                         else:
-                            print("🔍 Dossier update skipped - should_update returned False")
+                            print("🔍 Dossier update skipped - LLM decided not to update")
                     else:
                         print("🔍 Dossier update skipped - AI not available or dossier_extractor is None")
 

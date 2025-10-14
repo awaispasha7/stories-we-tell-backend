@@ -137,9 +137,9 @@ Respond ONLY with valid JSON in this exact format:
                 "locations": []
             }
     
-    def should_update_dossier(self, conversation_history: list) -> bool:
+    async def should_update_dossier(self, conversation_history: list) -> bool:
         """
-        Determine if we should update the dossier based on conversation
+        Use LLM to intelligently determine if we should update the dossier based on conversation
         
         Args:
             conversation_history: List of messages
@@ -147,36 +147,70 @@ Respond ONLY with valid JSON in this exact format:
         Returns:
             bool: True if dossier should be updated
         """
-        print(f"🔍 Checking if dossier should update. History length: {len(conversation_history)}")
+        print(f"🔍 LLM checking if dossier should update. History length: {len(conversation_history)}")
         
-        # Update dossier after every user message with story content (more aggressive)
-        if len(conversation_history) >= 2:  # At least one user + one assistant message
-            # Get the last user message
+        # Ensure we're initialized
+        self._ensure_initialized()
+        
+        # Build conversation context
+        context = "\n".join([
+            f"{msg['role'].upper()}: {msg['content']}"
+            for msg in conversation_history
+        ])
+        
+        # LLM decision prompt
+        decision_prompt = f"""You are analyzing a story development conversation to determine if the dossier should be updated.
+
+Conversation:
+{context}
+
+Based on this conversation, should the story dossier be updated? Consider:
+1. Did the user provide new story information (characters, plot, setting, genre, etc.)?
+2. Did the user reveal important story details that should be captured?
+3. Is there meaningful story content that wasn't in previous updates?
+
+Respond with ONLY "YES" if the dossier should be updated, or "NO" if it shouldn't.
+
+Decision:"""
+
+        try:
+            # Call OpenAI to make the decision
+            response = openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a story analysis expert. Analyze conversations and decide if story information should be captured in a dossier. Respond with only YES or NO."
+                    },
+                    {
+                        "role": "user",
+                        "content": decision_prompt
+                    }
+                ],
+                temperature=0.1,  # Very low temperature for consistent decisions
+                max_completion_tokens=10
+            )
+            
+            # Parse the response
+            decision = response.choices[0].message.content.strip().upper()
+            should_update = decision == "YES"
+            
+            print(f"🔍 LLM decision: {decision} -> Should update: {should_update}")
+            return should_update
+            
+        except Exception as e:
+            print(f"❌ Error in LLM dossier decision: {str(e)}")
+            # Fallback: update if there are user messages with story content
             user_messages = [msg for msg in conversation_history if msg.get("role") == "user"]
             if user_messages:
                 last_user_message = user_messages[-1].get("content", "").lower()
-                print(f"🔍 Last user message: '{last_user_message[:100]}...'")
-                
-                # Check for story-related keywords
-                story_keywords = [
-                    "character", "scene", "story", "plot", "genre", "title",
-                    "protagonist", "antagonist", "setting", "location", "main character",
-                    "wife", "husband", "family", "name", "called", "named"
-                ]
-                
-                has_story_keywords = any(keyword in last_user_message for keyword in story_keywords)
-                print(f"🔍 Has story keywords: {has_story_keywords}")
-                
-                if has_story_keywords:
-                    return True
-        
-        # Fallback: update every few messages
-        if len(conversation_history) % 4 == 0:  # Every 2 user + 2 assistant messages
-            print(f"🔍 Updating dossier due to message count: {len(conversation_history)}")
-            return True
-        
-        print(f"🔍 Not updating dossier")
-        return False
+                story_keywords = ["character", "story", "plot", "main", "name", "called", "named", "wife", "husband"]
+                has_story_content = any(keyword in last_user_message for keyword in story_keywords)
+                print(f"🔍 Fallback decision: {has_story_content}")
+                return has_story_content
+            
+            print(f"🔍 Fallback: Not updating dossier")
+            return False
 
 
 # Global instance - safe to create since we use lazy initialization
