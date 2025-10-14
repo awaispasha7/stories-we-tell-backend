@@ -147,20 +147,36 @@ Respond ONLY with valid JSON in this exact format:
         Returns:
             bool: True if dossier should be updated
         """
-        # Update dossier every 3 exchanges or when certain keywords are detected
-        if len(conversation_history) % 6 == 0:  # Every 3 user + 3 assistant messages
+        print(f"🔍 Checking if dossier should update. History length: {len(conversation_history)}")
+        
+        # Update dossier after every user message with story content (more aggressive)
+        if len(conversation_history) >= 2:  # At least one user + one assistant message
+            # Get the last user message
+            user_messages = [msg for msg in conversation_history if msg.get("role") == "user"]
+            if user_messages:
+                last_user_message = user_messages[-1].get("content", "").lower()
+                print(f"🔍 Last user message: '{last_user_message[:100]}...'")
+                
+                # Check for story-related keywords
+                story_keywords = [
+                    "character", "scene", "story", "plot", "genre", "title",
+                    "protagonist", "antagonist", "setting", "location", "main character",
+                    "wife", "husband", "family", "name", "called", "named"
+                ]
+                
+                has_story_keywords = any(keyword in last_user_message for keyword in story_keywords)
+                print(f"🔍 Has story keywords: {has_story_keywords}")
+                
+                if has_story_keywords:
+                    return True
+        
+        # Fallback: update every few messages
+        if len(conversation_history) % 4 == 0:  # Every 2 user + 2 assistant messages
+            print(f"🔍 Updating dossier due to message count: {len(conversation_history)}")
             return True
         
-        # Check for story-related keywords in recent messages
-        story_keywords = [
-            "character", "scene", "story", "plot", "genre", "title",
-            "protagonist", "antagonist", "setting", "location"
-        ]
-        
-        recent_messages = conversation_history[-2:] if len(conversation_history) >= 2 else conversation_history
-        recent_text = " ".join([msg.get("content", "").lower() for msg in recent_messages])
-        
-        return any(keyword in recent_text for keyword in story_keywords)
+        print(f"🔍 Not updating dossier")
+        return False
 
 
 # Global instance - safe to create since we use lazy initialization
