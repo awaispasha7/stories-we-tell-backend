@@ -19,22 +19,14 @@ except Exception as e:
 # Try to import AI components with error handling
 try:
     from app.ai.models import ai_manager, TaskType
+    from app.ai.dossier_extractor import dossier_extractor
     AI_AVAILABLE = True
-    print("✅ AI models imported successfully")
+    print("✅ AI components imported successfully")
 except Exception as e:
-    print(f"Warning: AI models not available: {e}")
+    print(f"Warning: AI components not available: {e}")
     AI_AVAILABLE = False
     ai_manager = None
     TaskType = None
-
-# Try to import dossier extractor separately
-try:
-    from app.ai.dossier_extractor import dossier_extractor
-    DOSSIER_EXTRACTOR_AVAILABLE = True
-    print("✅ Dossier extractor imported successfully")
-except Exception as e:
-    print(f"Warning: Dossier extractor not available: {e}")
-    DOSSIER_EXTRACTOR_AVAILABLE = False
     dossier_extractor = None
 
 router = APIRouter()
@@ -43,95 +35,6 @@ load_dotenv()
 # In-memory conversation storage (in production, use Redis or database)
 conversation_sessions = {}
 
-async def extract_dossier_fallback(conversation_history: list) -> dict:
-    """
-    Fallback dossier extraction when AI components are not available.
-    Extracts basic story information from conversation history.
-    """
-    try:
-        # Initialize default dossier
-        dossier = {
-            "title": "Untitled Story",
-            "logline": "A compelling story waiting to be told...",
-            "genre": "Unknown",
-            "tone": "Unknown",
-            "scenes": [],
-            "characters": [],
-            "locations": []
-        }
-        
-        # Extract information from all user messages
-        user_messages = [msg["content"] for msg in conversation_history if msg["role"] == "user"]
-        all_user_text = " ".join(user_messages).lower()
-        
-        # Extract characters (simple pattern matching)
-        characters = []
-        character_keywords = ["character", "protagonist", "antagonist", "main character", "hero", "villain"]
-        
-        for msg in user_messages:
-            msg_lower = msg.lower()
-            if any(keyword in msg_lower for keyword in character_keywords):
-                # Look for names (simple heuristic: capitalized words after character mentions)
-                words = msg.split()
-                for i, word in enumerate(words):
-                    if word.lower() in ["character", "protagonist", "antagonist", "main", "hero", "villain"]:
-                        # Look for the next capitalized word as potential name
-                        for j in range(i+1, min(i+4, len(words))):
-                            if words[j][0].isupper() and len(words[j]) > 2:
-                                name = words[j].strip(".,!?")
-                                if name not in [char["name"] for char in characters]:
-                                    characters.append({
-                                        "character_id": f"char_{len(characters)+1}",
-                                        "name": name,
-                                        "description": f"Character mentioned in conversation"
-                                    })
-                                break
-        
-        # Extract genre hints
-        genre_keywords = {
-            "thriller": ["thriller", "suspense", "mystery", "crime"],
-            "romance": ["romance", "love", "relationship", "couple"],
-            "drama": ["drama", "emotional", "serious", "realistic"],
-            "comedy": ["comedy", "funny", "humor", "comic"],
-            "action": ["action", "adventure", "fight", "chase"],
-            "horror": ["horror", "scary", "frightening", "terrifying"],
-            "sci-fi": ["sci-fi", "science fiction", "future", "space", "robot"],
-            "fantasy": ["fantasy", "magic", "wizard", "dragon", "medieval"]
-        }
-        
-        detected_genre = "Unknown"
-        for genre, keywords in genre_keywords.items():
-            if any(keyword in all_user_text for keyword in keywords):
-                detected_genre = genre.title()
-                break
-        
-        # Extract basic story elements
-        if "story" in all_user_text or "plot" in all_user_text:
-            dossier["title"] = "Story in Development"
-        
-        if characters:
-            dossier["characters"] = characters
-            if len(characters) == 1:
-                dossier["logline"] = f"A story about {characters[0]['name']}"
-            elif len(characters) > 1:
-                dossier["logline"] = f"A story involving {', '.join([char['name'] for char in characters[:2]])}"
-        
-        dossier["genre"] = detected_genre
-        
-        print(f"📊 Fallback dossier extraction completed: {dossier}")
-        return dossier
-        
-    except Exception as e:
-        print(f"❌ Error in fallback dossier extraction: {e}")
-        return {
-            "title": "Untitled Story",
-            "logline": "A compelling story waiting to be told...",
-            "genre": "Unknown",
-            "tone": "Unknown",
-            "scenes": [],
-            "characters": [],
-            "locations": []
-        }
 
 @router.post("/chat")
 async def rewrite_ask(chat_request: ChatRequest):
@@ -206,7 +109,7 @@ async def rewrite_ask(chat_request: ChatRequest):
             ])
 
             # Metadata to send to frontend
-    metadata = {
+            metadata = {
                 "turn_id": turn_id,
                 "project_id": project_id,
                 "raw_text": text,
@@ -222,7 +125,7 @@ async def rewrite_ask(chat_request: ChatRequest):
                     db_record = {
                         "turn_id": turn_id,
                         "project_id": project_id,
-        "raw_text": text,
+                        "raw_text": text,
                         "normalized_json": {
                             "response_text": reply,
                             "ai_model": model_used,
@@ -234,21 +137,15 @@ async def rewrite_ask(chat_request: ChatRequest):
                     if not response.data:
                         print("Warning: Failed to store chat metadata in Supabase")
 
-                    # Update dossier if needed (try AI extractor first, then fallback to simple extraction)
+                    # Update dossier if needed
                     should_update = False
                     dossier_data = None
                     
-                    if DOSSIER_EXTRACTOR_AVAILABLE and dossier_extractor is not None:
+                    if AI_AVAILABLE and dossier_extractor is not None:
                         should_update = dossier_extractor.should_update_dossier(conversation_history)
                         if should_update:
                             print("📊 Updating dossier using AI extractor...")
                             dossier_data = await dossier_extractor.extract_metadata(conversation_history)
-                    
-                    # If AI extractor didn't update or isn't available, use fallback
-                    if not should_update or not dossier_data:
-                        should_update = True
-                        print("📊 Updating dossier using fallback extractor...")
-                        dossier_data = await extract_dossier_fallback(conversation_history)
 
                     if should_update and dossier_data:
                         dossier_record = {

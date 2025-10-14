@@ -13,9 +13,16 @@ class DossierExtractor:
     """Extract story metadata from conversations"""
     
     def __init__(self):
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
+        self.api_key = None
+        self._initialized = False
+    
+    def _ensure_initialized(self):
+        """Lazy initialization to avoid import-time errors"""
+        if not self._initialized:
+            self.api_key = os.getenv("OPENAI_API_KEY")
+            if not self.api_key:
+                raise ValueError("OPENAI_API_KEY not found in environment variables")
+            self._initialized = True
     
     async def extract_metadata(self, conversation_history: list) -> dict:
         """
@@ -27,6 +34,9 @@ class DossierExtractor:
         Returns:
             dict: Structured metadata with title, logline, genre, tone, characters, scenes
         """
+        
+        # Ensure we're initialized
+        self._ensure_initialized()
         
         # Build conversation context
         context = "\n".join([
@@ -153,6 +163,6 @@ Respond ONLY with valid JSON in this exact format:
         return any(keyword in recent_text for keyword in story_keywords)
 
 
-# Global instance
+# Global instance - safe to create since we use lazy initialization
 dossier_extractor = DossierExtractor()
 
