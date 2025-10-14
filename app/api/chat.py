@@ -1,12 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models import ChatRequest, ChatResponse  # Import Pydantic models
-# from app.database.supabase import get_supabase_client
-# AI components are temporarily disabled to prevent deployment issues
-AI_AVAILABLE = False
-ai_manager = None
-TaskType = None
-dossier_extractor = None
+from app.database.supabase import get_supabase_client
+from app.ai.models import ai_manager, TaskType
+from app.ai.dossier_extractor import dossier_extractor
 import uuid
 import os
 import json
@@ -33,40 +30,10 @@ async def rewrite_ask(chat_request: ChatRequest):
     text = chat_request.text
     print(f"🔵 Received chat request: '{text[:100]}...'")
 
-    try:
-        # Simple fallback response for now
-        reply = f"I received your message: '{text}'. I'm currently having trouble connecting to my AI backend, but I'm here to help with your story development! What kind of story are you working on?"
-        
-        return {
-            "reply": reply,
-            "metadata": {
-                "turn_id": str(uuid.uuid4()),
-                "project_id": "default",
-                "raw_text": text,
-                "response_text": reply,
-                "ai_model": "fallback",
-                "tokens_used": 0
-            }
-        }
-    except Exception as e:
-        print(f"❌ Chat API error: {str(e)}")
-        return {
-            "reply": f"Error: {str(e)}",
-            "metadata": {
-                "turn_id": str(uuid.uuid4()),
-                "project_id": "error",
-                "raw_text": text,
-                "response_text": f"Error: {str(e)}",
-                "ai_model": "error",
-                "tokens_used": 0
-            }
-        }
-
-# Old complex chat endpoint (commented out for now)
-async def old_chat_endpoint():
+    async def generate_stream():
         try:
-            print(f"🟡 Starting AI response generation for: '{text[:50]}...'")
-            
+            print(f"🟡 Starting response generation for: '{text[:50]}...'")
+
             # Get or create session
             session_id = "default_session"
             if session_id not in conversation_sessions:
@@ -74,35 +41,33 @@ async def old_chat_endpoint():
                     "project_id": str(uuid.uuid4()),
                     "history": []
                 }
-            
+
             # Get conversation history for context
             conversation_history = conversation_sessions[session_id]["history"]
             print(f"📚 Conversation history length: {len(conversation_history)} messages")
-            
+
             # Check if AI is available
-            if not AI_AVAILABLE or ai_manager is None:
-                print("⚠️ AI not available, returning fallback response")
-                ai_response = {
-                    "response": f"I received your message: '{text}'. I'm currently having trouble connecting to my AI backend, but I'm here to help with your story development! What kind of story are you working on?",
-                    "model_used": "fallback",
-                    "tokens_used": 0
-                }
+            if ai_manager is None or TaskType is None:
+                print("⚠️ AI not available, using fallback response")
+                reply = f"I received your message: '{text}'. I'm currently having trouble connecting to my AI backend, but I'm here to help with your story development! What kind of story are you working on?"
+                model_used = "fallback"
+                tokens_used = 0
             else:
-                # Generate response using gpt-4o-mini for chat WITH CONTEXT
+                # Generate response using AI
                 ai_response = await ai_manager.generate_response(
                     task_type=TaskType.CHAT,
                     prompt=text,
-                    conversation_history=conversation_history,  # Pass history for context
+                    conversation_history=conversation_history,
                     max_tokens=500,
                     temperature=0.7
                 )
 
-            print(f"🟢 AI Response received: {ai_response}")
-            
-            reply = ai_response.get("response", "Sorry, I couldn't generate a response.")
-            model_used = ai_response.get("model_used", "unknown")
-            tokens_used = ai_response.get("tokens_used", 0)
-            
+                print(f"🟢 AI Response received: {ai_response}")
+
+                reply = ai_response.get("response", "Sorry, I couldn't generate a response.")
+                model_used = ai_response.get("model_used", "unknown")
+                tokens_used = ai_response.get("tokens_used", 0)
+
             print(f"📝 Reply content: '{reply[:100]}...'")
             print(f"🤖 Model used: {model_used}")
             print(f"🔢 Tokens used: {tokens_used}")
@@ -110,7 +75,7 @@ async def old_chat_endpoint():
             # Stream the response word by word
             words = reply.split()
             print(f"📊 Streaming {len(words)} words")
-            
+
             for i, word in enumerate(words):
                 chunk = {
                     "type": "content",
@@ -120,28 +85,20 @@ async def old_chat_endpoint():
                 chunk_data = f"data: {json.dumps(chunk)}\n\n"
                 print(f"📤 Sending chunk {i+1}/{len(words)}: '{word}'")
                 yield chunk_data
-                await asyncio.sleep(0.1)  # Slightly longer delay for typing effect
+                await asyncio.sleep(0.05)  # Slightly faster for better UX
 
             # Send final metadata
             turn_id = str(uuid.uuid4())
-            # Use session-based project_id (persist across requests)
-            session_id = "default_session"  # In production, use user session/cookie
-            if session_id not in conversation_sessions:
-                conversation_sessions[session_id] = {
-                    "project_id": str(uuid.uuid4()),
-                    "history": []
-                }
-            
             project_id = conversation_sessions[session_id]["project_id"]
-            
+
             # Add to conversation history
             conversation_sessions[session_id]["history"].extend([
                 {"role": "user", "content": text},
                 {"role": "assistant", "content": reply}
             ])
-            
+
             # Metadata to send to frontend
-    metadata = {
+            metadata = {
                 "turn_id": turn_id,
                 "project_id": project_id,
                 "raw_text": text,
@@ -150,50 +107,44 @@ async def old_chat_endpoint():
                 "tokens_used": tokens_used
             }
 
-            # Store the result in Supabase (matching actual schema)
-            if "Error" not in reply:
+            # Store the result in Supabase (if available)
+            if "Error" not in reply and SUPABASE_AVAILABLE and get_supabase_client is not None:
                 try:
                     supabase = get_supabase_client()
-                    # Match the actual database schema: turn_id, project_id, raw_text, normalized_json
                     db_record = {
                         "turn_id": turn_id,
                         "project_id": project_id,
-        "raw_text": text,
+                        "raw_text": text,
                         "normalized_json": {
                             "response_text": reply,
                             "ai_model": model_used,
                             "tokens_used": tokens_used,
-                            "timestamp": str(uuid.uuid4())  # Can be replaced with actual timestamp if needed
+                            "timestamp": str(uuid.uuid4())
                         }
                     }
                     response = supabase.table("turns").insert([db_record]).execute()
                     if not response.data:
                         print("Warning: Failed to store chat metadata in Supabase")
-                    
-                    # Update dossier if needed
-                    conversation_history = conversation_sessions[session_id]["history"]
-                    if AI_AVAILABLE and dossier_extractor and dossier_extractor.should_update_dossier(conversation_history):
+
+                    # Update dossier if needed (if AI components are available)
+                    if dossier_extractor is not None and dossier_extractor.should_update_dossier(conversation_history):
                         print("📊 Updating dossier...")
                         dossier_data = await dossier_extractor.extract_metadata(conversation_history)
-                        
-                        # Upsert dossier (insert or update)
+
                         dossier_record = {
                             "project_id": project_id,
                             "snapshot_json": dossier_data
                         }
-                        
-                        # Try to update first, then insert if not exists
+
                         existing = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
-                        
+
                         if existing.data and len(existing.data) > 0:
-                            # Update existing
                             supabase.table("dossier").update(dossier_record).eq("project_id", project_id).execute()
                             print(f"✅ Updated dossier for project {project_id}")
                         else:
-                            # Insert new
                             supabase.table("dossier").insert([dossier_record]).execute()
                             print(f"✅ Created dossier for project {project_id}")
-                    
+
                 except Exception as db_error:
                     print(f"Database error (non-critical): {str(db_error)}")
 
@@ -209,8 +160,8 @@ async def old_chat_endpoint():
             print(f"❌ Error type: {type(e).__name__}")
             import traceback
             print(f"❌ Full traceback: {traceback.format_exc()}")
-            error_reply = f"I apologize, but I'm having trouble generating a response right now. Please make sure your OpenAI API key is properly configured. Error: {str(e)}"
-            
+            error_reply = f"I apologize, but I'm having trouble generating a response right now. Please try again later. Error: {str(e)}"
+
             # Stream error message
             words = error_reply.split()
             for i, word in enumerate(words):
@@ -229,62 +180,75 @@ async def old_chat_endpoint():
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Content-Type": "text/event-stream",
+            "Access-Control-Allow-Origin": "*",
         }
     )
 
-@router.post("/generate-description")
-async def generate_description(chat_request: ChatRequest):
-    """Generate description using Gemini Pro"""
-    text = chat_request.text
-    
-    ai_response = await ai_manager.generate_response(
-        task_type=TaskType.DESCRIPTION,
-        prompt=text,
-        max_tokens=1000,
-        temperature=0.7
-    )
-    
-    return {
-        "description": ai_response.get("response", "Could not generate description"),
-        "model_used": ai_response.get("model_used", "unknown"),
-        "tokens_used": ai_response.get("tokens_used", 0)
-    }
+# Additional endpoints temporarily disabled until AI components are properly configured
+# These can be re-enabled when proper API keys and AI models are available
 
-@router.post("/generate-script")
-async def generate_script(chat_request: ChatRequest):
-    """Generate script using GPT-5"""
-    text = chat_request.text
-    
-    ai_response = await ai_manager.generate_response(
-        task_type=TaskType.SCRIPT,
-        prompt=text,
-        max_tokens=2000,
-        temperature=0.8
-    )
-    
-    return {
-        "script": ai_response.get("response", "Could not generate script"),
-        "model_used": ai_response.get("model_used", "unknown"),
-        "tokens_used": ai_response.get("tokens_used", 0)
-    }
+# @router.post("/generate-description")
+# async def generate_description(chat_request: ChatRequest):
+#     """Generate description using Gemini Pro"""
+#     text = chat_request.text
+#
+#     if ai_manager is None or TaskType is None:
+#         return {"error": "AI components not available"}
+#
+#     ai_response = await ai_manager.generate_response(
+#         task_type=TaskType.DESCRIPTION,
+#         prompt=text,
+#         max_tokens=1000,
+#         temperature=0.7
+#     )
+#
+#     return {
+#         "description": ai_response.get("response", "Could not generate description"),
+#         "model_used": ai_response.get("model_used", "unknown"),
+#         "tokens_used": ai_response.get("tokens_used", 0)
+#     }
 
-@router.post("/generate-scene")
-async def generate_scene(chat_request: ChatRequest):
-    """Generate scene using Claude 3 Sonnet"""
-    text = chat_request.text
-    
-    ai_response = await ai_manager.generate_response(
-        task_type=TaskType.SCENE,
-        prompt=text,
-        max_tokens=2000,
-        temperature=0.7
-    )
-    
-    return {
-        "scene": ai_response.get("response", "Could not generate scene"),
-        "model_used": ai_response.get("model_used", "unknown"),
-        "tokens_used": ai_response.get("tokens_used", 0)
-    }
+# @router.post("/generate-script")
+# async def generate_script(chat_request: ChatRequest):
+#     """Generate script using GPT-5"""
+#     text = chat_request.text
+#
+#     if ai_manager is None or TaskType is None:
+#         return {"error": "AI components not available"}
+#
+#     ai_response = await ai_manager.generate_response(
+#         task_type=TaskType.SCRIPT,
+#         prompt=text,
+#         max_tokens=2000,
+#         temperature=0.8
+#     )
+#
+#     return {
+#         "script": ai_response.get("response", "Could not generate script"),
+#         "model_used": ai_response.get("model_used", "unknown"),
+#         "tokens_used": ai_response.get("tokens_used", 0)
+#     }
+
+# @router.post("/generate-scene")
+# async def generate_scene(chat_request: ChatRequest):
+#     """Generate scene using Claude 3 Sonnet"""
+#     text = chat_request.text
+#
+#     if ai_manager is None or TaskType is None:
+#         return {"error": "AI components not available"}
+#
+#     ai_response = await ai_manager.generate_response(
+#         task_type=TaskType.SCENE,
+#         prompt=text,
+#         max_tokens=2000,
+#         temperature=0.7
+#     )
+#
+#     return {
+#         "scene": ai_response.get("response", "Could not generate scene"),
+#         "model_used": ai_response.get("model_used", "unknown"),
+#         "tokens_used": ai_response.get("tokens_used", 0)
+#     }
 
 @router.get("/dossier")
 async def get_dossier(project_id: str = None):
