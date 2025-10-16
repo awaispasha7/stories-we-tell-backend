@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat, transcribe  # Import the chat and transcribe routes
+from app.api import chat, transcribe, chat_sessions, auth  # Import the chat, transcribe, chat_sessions, and auth routes
 # from app.api import upload  # Import the upload route
 # Import the Supabase client (with error handling)
 try:
@@ -27,8 +27,14 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
-# Include the chat route
+# Include the chat route (legacy)
 app.include_router(chat.router)
+
+# Include the new chat sessions route
+app.include_router(chat_sessions.router, prefix="/api/v1", tags=["chat-sessions"])
+
+# Include the auth route
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["authentication"])
 
 # Include the upload route
 # app.include_router(upload.router)
@@ -48,7 +54,7 @@ async def health_check():
         "status": "healthy",
         "message": "Backend is running",
         "cors_enabled": True,
-        "endpoints": ["/chat", "/dossier", "/transcribe", "/upload"]
+        "endpoints": ["/chat", "/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup"]
     }
 
 # Add simple test endpoint
