@@ -12,11 +12,36 @@ from ..database.session_service_supabase import session_service
 
 router = APIRouter()
 
+async def get_or_create_default_user() -> UUID:
+    """Get the first available user or create a default one"""
+    try:
+        # Try to get the first user from the database
+        users = session_service.get_all_users()
+        if users and len(users) > 0:
+            user_id = users[0].user_id
+            print(f"✅ Using existing user: {user_id}")
+            return user_id
+    except Exception as e:
+        print(f"⚠️ Could not fetch users: {e}")
+    
+    # If no users exist, create a default one
+    try:
+        user_data = {
+            "email": "default@example.com",
+            "display_name": "Default User"
+        }
+        user = session_service.create_user(user_data)
+        print(f"✅ Created default user: {user.user_id}")
+        return user.user_id
+    except Exception as e:
+        print(f"❌ Failed to create default user: {e}")
+        raise HTTPException(status_code=500, detail="No users available and cannot create default user")
+
 def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> UUID:
     """Get current user ID from header (temporary implementation)"""
     if not x_user_id:
-        # Default to demo user for now
-        return UUID("550e8400-e29b-41d4-a716-446655440000")
+        # Use the existing user from your database (Awais Pasha)
+        return UUID("cd32c283-7d54-479d-a54b-de88152d4d93")
     
     try:
         return UUID(x_user_id)
@@ -26,6 +51,9 @@ def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> UUID:
 @router.get("/dossiers", response_model=List[Dossier])
 async def get_user_dossiers(user_id: UUID = Depends(get_current_user_id)):
     """Get all dossiers for the current user"""
+    # Use the existing user from your database (Awais Pasha)
+    print(f"✅ Using user: {user_id}")
+    
     try:
         dossiers = session_service.get_user_dossiers(user_id)
         return dossiers

@@ -5,11 +5,12 @@ Handles user sessions, chat messages, and conversation persistence
 
 from fastapi import APIRouter, HTTPException, Depends, Header
 from fastapi.responses import StreamingResponse
-from typing import Optional, List
+from typing import Optional, List, Dict
 from uuid import UUID, uuid4
 import json
 import asyncio
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
 from ..models import (
     ChatRequest, ChatResponse, SessionSummary, ChatMessage,
@@ -32,6 +33,67 @@ except Exception as e:
 
 router = APIRouter()
 
+# Anonymous session management
+ANONYMOUS_SESSIONS: Dict[str, Dict] = {}
+ANONYMOUS_SESSION_TIMEOUT = 30 * 60  # 30 minutes in seconds
+
+class AnonymousSession:
+    """Manages anonymous user sessions with timeout"""
+    
+    @staticmethod
+    def create_session() -> str:
+        """Create a new anonymous session"""
+        session_id = str(uuid4())
+        ANONYMOUS_SESSIONS[session_id] = {
+            "created_at": time.time(),
+            "last_activity": time.time(),
+            "messages": [],
+            "project_id": str(uuid4())
+        }
+        print(f"🆕 Created anonymous session: {session_id}")
+        return session_id
+    
+    @staticmethod
+    def get_session(session_id: str) -> Optional[Dict]:
+        """Get anonymous session if it exists and hasn't expired"""
+        if session_id not in ANONYMOUS_SESSIONS:
+            return None
+        
+        session = ANONYMOUS_SESSIONS[session_id]
+        current_time = time.time()
+        
+        # Check if session has expired
+        if current_time - session["last_activity"] > ANONYMOUS_SESSION_TIMEOUT:
+            print(f"⏰ Anonymous session expired: {session_id}")
+            del ANONYMOUS_SESSIONS[session_id]
+            return None
+        
+        # Update last activity
+        session["last_activity"] = current_time
+        return session
+    
+    @staticmethod
+    def update_session(session_id: str, messages: List[Dict]) -> bool:
+        """Update session messages"""
+        session = AnonymousSession.get_session(session_id)
+        if session:
+            session["messages"] = messages
+            return True
+        return False
+    
+    @staticmethod
+    def cleanup_expired_sessions():
+        """Clean up expired anonymous sessions"""
+        current_time = time.time()
+        expired_sessions = [
+            session_id for session_id, session in ANONYMOUS_SESSIONS.items()
+            if current_time - session["last_activity"] > ANONYMOUS_SESSION_TIMEOUT
+        ]
+        
+        for session_id in expired_sessions:
+            del ANONYMOUS_SESSIONS[session_id]
+            print(f"🧹 Cleaned up expired session: {session_id}")
+
 # Temporary user management (in production, use proper auth)
 TEMP_USERS = {
     "demo-user": {
@@ -41,60 +103,138 @@ TEMP_USERS = {
     }
 }
 
-def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> UUID:
-    """Get current user ID from header (temporary implementation)"""
-    if not x_user_id:
-        # Default to demo user for now
-        return UUID("550e8400-e29b-41d4-a716-446655440000")
-    
+async def get_or_create_default_user() -> UUID:
+    """Get the first available user or create a default one"""
     try:
-        return UUID(x_user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
+        # Try to get the first user from the database
+        users = session_service.get_all_users()
+        if users and len(users) > 0:
+            user_id = users[0].user_id
+            print(f"✅ Using existing user: {user_id}")
+            return user_id
+    except Exception as e:
+        print(f"⚠️ Could not fetch users: {e}")
+    
+    # If no users exist, create a default one
+    try:
+        user_data = {
+            "email": "default@example.com",
+            "display_name": "Default User"
+        }
+        user = session_service.create_user(user_data)
+        print(f"✅ Created default user: {user.user_id}")
+        return user.user_id
+    except Exception as e:
+        print(f"❌ Failed to create default user: {e}")
+        raise HTTPException(status_code=500, detail="No users available and cannot create default user")
+
+def get_current_user_id(x_user_id: Optional[str] = Header(None), x_session_id: Optional[str] = Header(None)) -> tuple[Optional[UUID], Optional[str]]:
+    """Get current user ID and session ID from headers"""
+    # If user is authenticated, use their user ID
+    if x_user_id:
+        try:
+            return UUID(x_user_id), x_session_id
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user ID format")
+    
+    # If no user ID but has session ID, it's an anonymous session
+    if x_session_id:
+        return None, x_session_id
+    
+    # No user ID and no session ID - create new anonymous session
+    return None, None
 
 
 @router.post("/chat")
 async def chat_with_session(
     chat_request: ChatRequest,
-    user_id: UUID = Depends(get_current_user_id)
+    user_session: tuple[Optional[UUID], Optional[str]] = Depends(get_current_user_id)
 ):
-    """Chat endpoint with session support"""
+    """Chat endpoint with session support for both authenticated and anonymous users"""
+    user_id, session_id = user_session
+    
+    # Handle anonymous sessions
+    if user_id is None:
+        if session_id is None:
+            # Create new anonymous session
+            session_id = AnonymousSession.create_session()
+            print(f"🆕 Created new anonymous session: {session_id}")
+        else:
+            # Check if existing anonymous session is valid
+            session = AnonymousSession.get_session(session_id)
+            if session is None:
+                # Session expired, create new one
+                session_id = AnonymousSession.create_session()
+                print(f"⏰ Session expired, created new anonymous session: {session_id}")
+            else:
+                print(f"✅ Using existing anonymous session: {session_id}")
+    else:
+        print(f"✅ Using authenticated user: {user_id}")
+    
     text = chat_request.text
-    print(f"🔵 Received chat request from user {user_id}: '{text[:100]}...'")
+    print(f"🔵 Received chat request: '{text[:100]}...'")
 
     async def generate_stream():
         try:
             print(f"🟡 Starting response generation for: '{text[:50]}...'")
 
-            # Get or create session
-            session = session_service.get_or_create_session(
-                user_id=user_id,
-                project_id=chat_request.project_id or uuid4(),
-                session_id=chat_request.session_id,
-                title=f"Chat Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            )
-            
-            print(f"📋 Using session: {session.session_id}")
-
-            # Get conversation history for context
-            conversation_history = session_service.get_session_context(
-                session.session_id, user_id, context_limit=10
-            )
+            # Handle session based on user type
+            if user_id is not None:
+                # Authenticated user - use database session
+                session = session_service.get_or_create_session(
+                    user_id=user_id,
+                    project_id=chat_request.project_id or uuid4(),
+                    session_id=chat_request.session_id,
+                    title=f"Chat Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                )
+                print(f"📋 Using authenticated session: {session.session_id}")
+                
+                # Get conversation history for context
+                conversation_history = session_service.get_session_context(
+                    session.session_id, user_id, context_limit=10
+                )
+            else:
+                # Anonymous user - use in-memory session
+                anonymous_session = AnonymousSession.get_session(session_id)
+                if not anonymous_session:
+                    raise HTTPException(status_code=410, detail="Anonymous session expired. Please sign in to continue.")
+                
+                print(f"📋 Using anonymous session: {session_id}")
+                
+                # Get conversation history from anonymous session
+                conversation_history = [
+                    {"role": msg["role"], "content": msg["content"]}
+                    for msg in anonymous_session["messages"]
+                ]
             
             # Convert to the format expected by AI
-            history_for_ai = [
-                {"role": msg.role, "content": msg.content} 
-                for msg in conversation_history
-            ]
+            if user_id is not None:
+                # Authenticated user - convert from database objects
+                history_for_ai = [
+                    {"role": msg.role, "content": msg.content} 
+                    for msg in conversation_history
+                ]
+            else:
+                # Anonymous user - already in correct format
+                history_for_ai = conversation_history
             
             print(f"📚 Conversation history length: {len(history_for_ai)} messages")
 
-            # Store user message
-            user_message = session_service.create_message({
-                "session_id": session.session_id,
-                "role": "user",
-                "content": text
-            })
+            # Store user message based on user type
+            if user_id is not None:
+                # Authenticated user - store in database
+                user_message = session_service.create_message({
+                    "session_id": session.session_id,
+                    "role": "user",
+                    "content": text
+                })
+            else:
+                # Anonymous user - store in memory
+                anonymous_session["messages"].append({
+                    "role": "user",
+                    "content": text,
+                    "timestamp": time.time()
+                })
 
             # Check if AI is available
             if not AI_AVAILABLE or ai_manager is None or TaskType is None:
@@ -137,16 +277,29 @@ async def chat_with_session(
                 yield chunk_data
                 await asyncio.sleep(0.05)  # Slightly faster for better UX
 
-            # Store assistant message
-            assistant_message = session_service.create_message({
-                "session_id": session.session_id,
-                "role": "assistant",
-                "content": reply,
-                "metadata": {
-                    "model_used": model_used,
-                    "tokens_used": tokens_used
-                }
-            })
+            # Store assistant message based on user type
+            if user_id is not None:
+                # Authenticated user - store in database
+                assistant_message = session_service.create_message({
+                    "session_id": session.session_id,
+                    "role": "assistant",
+                    "content": reply,
+                    "metadata": {
+                        "model_used": model_used,
+                        "tokens_used": tokens_used
+                    }
+                })
+            else:
+                # Anonymous user - store in memory
+                anonymous_session["messages"].append({
+                    "role": "assistant",
+                    "content": reply,
+                    "timestamp": time.time(),
+                    "metadata": {
+                        "model_used": model_used,
+                        "tokens_used": tokens_used
+                    }
+                })
 
             # Update dossier if needed (existing logic)
             if AI_AVAILABLE and dossier_extractor is not None:
@@ -165,14 +318,27 @@ async def chat_with_session(
                     print(f"⚠️ Dossier update error: {dossier_error}")
 
             # Send metadata chunk
-            metadata = {
-                "session_id": str(session.session_id),
-                "message_id": str(assistant_message.message_id),
-                "user_message_id": str(user_message.message_id),
-                "project_id": str(session.project_id),
-                "ai_model": model_used,
-                "tokens_used": tokens_used
-            }
+            if user_id is not None:
+                # Authenticated user metadata
+                metadata = {
+                    "session_id": str(session.session_id),
+                    "message_id": str(assistant_message.message_id),
+                    "user_message_id": str(user_message.message_id),
+                    "project_id": str(session.project_id),
+                    "ai_model": model_used,
+                    "tokens_used": tokens_used,
+                    "user_type": "authenticated"
+                }
+            else:
+                # Anonymous user metadata
+                metadata = {
+                    "session_id": session_id,
+                    "project_id": anonymous_session["project_id"],
+                    "ai_model": model_used,
+                    "tokens_used": tokens_used,
+                    "user_type": "anonymous",
+                    "session_expires_at": anonymous_session["last_activity"] + ANONYMOUS_SESSION_TIMEOUT
+                }
             
             metadata_chunk = {
                 "type": "metadata",
@@ -319,3 +485,44 @@ async def get_current_user(user_id: UUID = Depends(get_current_user_id)):
     except Exception as e:
         print(f"❌ Error fetching user: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user")
+
+
+@router.post("/anonymous-session")
+async def create_anonymous_session():
+    """Create a new anonymous session for users who haven't signed in"""
+    try:
+        session_id = AnonymousSession.create_session()
+        session = AnonymousSession.get_session(session_id)
+        
+        return {
+            "session_id": session_id,
+            "project_id": session["project_id"],
+            "expires_at": session["last_activity"] + ANONYMOUS_SESSION_TIMEOUT,
+            "message": "Anonymous session created. Sign in to save your chats permanently."
+        }
+    except Exception as e:
+        print(f"❌ Error creating anonymous session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create anonymous session")
+
+
+@router.get("/anonymous-session/{session_id}")
+async def get_anonymous_session(session_id: str):
+    """Get anonymous session details"""
+    try:
+        session = AnonymousSession.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=410, detail="Anonymous session expired. Please sign in to continue.")
+        
+        return {
+            "session_id": session_id,
+            "project_id": session["project_id"],
+            "expires_at": session["last_activity"] + ANONYMOUS_SESSION_TIMEOUT,
+            "messages_count": len(session["messages"]),
+            "created_at": session["created_at"],
+            "last_activity": session["last_activity"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error getting anonymous session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get anonymous session")
