@@ -67,7 +67,7 @@ async def chat_with_session(
             print(f"🟡 Starting response generation for: '{text[:50]}...'")
 
             # Get or create session
-            session = await session_service.get_or_create_session(
+            session = session_service.get_or_create_session(
                 user_id=user_id,
                 project_id=chat_request.project_id or uuid4(),
                 session_id=chat_request.session_id,
@@ -77,7 +77,7 @@ async def chat_with_session(
             print(f"📋 Using session: {session.session_id}")
 
             # Get conversation history for context
-            conversation_history = await session_service.get_session_context(
+            conversation_history = session_service.get_session_context(
                 session.session_id, user_id, context_limit=10
             )
             
@@ -90,7 +90,7 @@ async def chat_with_session(
             print(f"📚 Conversation history length: {len(history_for_ai)} messages")
 
             # Store user message
-            user_message = await session_service.create_message({
+            user_message = session_service.create_message({
                 "session_id": session.session_id,
                 "role": "user",
                 "content": text
@@ -138,7 +138,7 @@ async def chat_with_session(
                 await asyncio.sleep(0.05)  # Slightly faster for better UX
 
             # Store assistant message
-            assistant_message = await session_service.create_message({
+            assistant_message = session_service.create_message({
                 "session_id": session.session_id,
                 "role": "assistant",
                 "content": reply,
@@ -217,7 +217,7 @@ async def get_user_sessions(
 ):
     """Get user's chat sessions"""
     try:
-        sessions = await session_service.get_user_sessions(user_id, limit)
+        sessions = session_service.get_user_sessions(user_id, limit)
         return sessions
     except Exception as e:
         print(f"❌ Error fetching sessions: {e}")
@@ -234,11 +234,11 @@ async def get_session_messages(
     """Get messages for a specific session"""
     try:
         # Verify session ownership
-        session = await session_service.get_session(session_id, user_id)
+        session = session_service.get_session(session_id, user_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        messages = await session_service.get_session_messages(
+        messages = session_service.get_session_messages(
             session_id, user_id, limit, offset
         )
         return messages
@@ -257,7 +257,7 @@ async def update_session_title(
 ):
     """Update session title"""
     try:
-        session = await session_service.update_session_title(session_id, user_id, title)
+        session = session_service.update_session_title(session_id, user_id, title)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         return {"message": "Session title updated successfully", "session": session}
@@ -275,7 +275,7 @@ async def delete_session(
 ):
     """Delete (deactivate) a session"""
     try:
-        success = await session_service.deactivate_session(session_id, user_id)
+        success = session_service.deactivate_session(session_id, user_id)
         if not success:
             raise HTTPException(status_code=404, detail="Session not found")
         return {"message": "Session deleted successfully"}
@@ -290,7 +290,7 @@ async def delete_session(
 async def create_user(user_data: UserCreate):
     """Create a new user (temporary endpoint)"""
     try:
-        user = await session_service.create_user(user_data)
+        user = session_service.create_user(user_data)
         return {"message": "User created successfully", "user": user}
     except Exception as e:
         print(f"❌ Error creating user: {e}")
@@ -301,7 +301,7 @@ async def create_user(user_data: UserCreate):
 async def get_current_user(user_id: UUID = Depends(get_current_user_id)):
     """Get current user information"""
     try:
-        user = await session_service.get_user(user_id)
+        user = session_service.get_user(user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         return user
