@@ -4,8 +4,7 @@ from datetime import datetime
 
 # Import routes with error handling
 try:
-    from app.api import chat, transcribe, chat_sessions
-    from app.api.auth_simple import router as auth_simple_router
+    from app.api import chat, transcribe, chat_sessions, auth
     ROUTES_AVAILABLE = True
     AUTH_AVAILABLE = True
 except Exception as e:
@@ -44,9 +43,9 @@ if ROUTES_AVAILABLE:
         print(f"❌ Error including chat sessions router: {e}")
 
     try:
-        # Include the simple auth route for testing
-        app.include_router(auth_simple_router, prefix="/api/v1/auth", tags=["authentication"])
-        print("✅ Simple auth router included")
+        # Include the auth route
+        app.include_router(auth.router, prefix="/api/v1/auth", tags=["authentication"])
+        print("✅ Auth router included")
     except Exception as e:
         print(f"❌ Error including auth router: {e}")
 
@@ -80,16 +79,6 @@ async def health_check():
 async def test_endpoint():
     return {"message": "Test endpoint working", "status": "ok"}
 
-# Add a simple auth test endpoint that doesn't require database
-@app.post("/api/v1/auth/test")
-async def auth_test():
-    """Simple test endpoint for auth without database dependencies"""
-    return {
-        "message": "Auth endpoint is working",
-        "status": "ok",
-        "cors_enabled": True,
-        "timestamp": datetime.now().isoformat()
-    }
 
 # CORS is handled by the middleware above
 
