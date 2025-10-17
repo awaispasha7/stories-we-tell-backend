@@ -38,8 +38,7 @@ class SessionService:
             "user_id": str(user_id),
             "email": user_data.email,
             "display_name": user_data.display_name,
-            "avatar_url": user_data.avatar_url,
-            "password_hash": getattr(user_data, 'password_hash', None)
+            "avatar_url": user_data.avatar_url
         }
         
         # Use upsert to handle existing users
