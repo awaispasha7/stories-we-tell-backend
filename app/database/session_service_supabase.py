@@ -28,24 +28,27 @@ class SessionService:
     
     # User Management
     def create_user(self, user_data: UserCreate) -> User:
-        """Create a new user"""
+        """Create a new user or update existing one"""
         supabase = self.get_supabase()
-        user_id = uuid4()
+        
+        # If user_id is provided, use it; otherwise generate a new one
+        user_id = user_data.user_id if hasattr(user_data, 'user_id') and user_data.user_id else uuid4()
         
         user_record = {
             "user_id": str(user_id),
             "email": user_data.email,
             "display_name": user_data.display_name,
             "avatar_url": user_data.avatar_url,
-            "password_hash": user_data.password_hash
+            "password_hash": getattr(user_data, 'password_hash', None)
         }
         
-        result = supabase.table("users").insert(user_record).execute()
+        # Use upsert to handle existing users
+        result = supabase.table("users").upsert(user_record, on_conflict="user_id").execute()
         
         if result.data:
             return User(**result.data[0])
         else:
-            raise Exception("Failed to create user")
+            raise Exception("Failed to create/update user")
     
     def get_user(self, user_id: UUID) -> Optional[User]:
         """Get user by ID"""
