@@ -14,6 +14,7 @@ class User(BaseModel):
     updated_at: Optional[datetime] = None
 
 class UserCreate(BaseModel):
+    user_id: Optional[str] = None  # Supabase auth user ID
     email: Optional[str] = None
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None

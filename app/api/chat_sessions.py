@@ -290,7 +290,16 @@ async def delete_session(
 async def create_user(user_data: UserCreate):
     """Create a new user (temporary endpoint)"""
     try:
-        user = session_service.create_user(user_data)
+        # If user_id is provided, use the auth-specific method
+        if hasattr(user_data, 'user_id') and user_data.user_id:
+            user = session_service.create_user_from_auth(
+                auth_user_id=user_data.user_id,
+                email=user_data.email,
+                display_name=user_data.display_name,
+                avatar_url=user_data.avatar_url
+            )
+        else:
+            user = session_service.create_user(user_data)
         return {"message": "User created successfully", "user": user}
     except Exception as e:
         print(f"❌ Error creating user: {e}")

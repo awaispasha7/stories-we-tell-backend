@@ -60,6 +60,37 @@ class SessionService:
         else:
             raise Exception("Failed to create/update user")
     
+    def create_user_from_auth(self, auth_user_id: str, email: str, display_name: str = None, avatar_url: str = None) -> User:
+        """Create a user from Supabase auth user data using the auth user's ID"""
+        supabase = self.get_supabase()
+        
+        user_record = {
+            "user_id": auth_user_id,  # Use the auth user's ID directly
+            "email": email,
+            "display_name": display_name or email.split('@')[0] if email else None,
+            "avatar_url": avatar_url
+        }
+        
+        # Try to insert first, if it fails due to conflict, try to update
+        try:
+            result = supabase.table("users").insert(user_record).execute()
+        except Exception as e:
+            # If insert fails (likely due to user_id conflict), try to update
+            if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+                result = supabase.table("users").update({
+                    "email": email,
+                    "display_name": display_name or email.split('@')[0] if email else None,
+                    "avatar_url": avatar_url,
+                    "updated_at": datetime.now().isoformat()
+                }).eq("user_id", auth_user_id).execute()
+            else:
+                raise e
+        
+        if result.data:
+            return User(**result.data[0])
+        else:
+            raise Exception("Failed to create/update user from auth")
+    
     def get_user(self, user_id: UUID) -> Optional[User]:
         """Get user by ID"""
         supabase = self.get_supabase()
