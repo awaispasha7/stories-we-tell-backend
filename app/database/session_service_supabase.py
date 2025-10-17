@@ -422,14 +422,12 @@ class SessionService:
             # Create a default dossier/project
             dossier_record = {
                 "project_id": str(project_id),
-                "user_id": str(user_id),
                 "snapshot_json": {
                     "title": "New Project",
                     "logline": "",
                     "characters": [],
                     "scenes": []
                 },
-                "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
             }
             
