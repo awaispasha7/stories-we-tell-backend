@@ -118,24 +118,27 @@ async def rewrite_ask(chat_request: ChatRequest):
                 "tokens_used": tokens_used
             }
 
-            # Store the result in Supabase (if available)
-            if "Error" not in reply and SUPABASE_AVAILABLE and get_supabase_client is not None:
-                try:
-                    supabase = get_supabase_client()
-                    db_record = {
-                        "turn_id": turn_id,
-                        "project_id": project_id,
-                        "raw_text": text,
-                        "normalized_json": {
-                            "response_text": reply,
-                            "ai_model": model_used,
-                            "tokens_used": tokens_used,
-                            "timestamp": str(uuid.uuid4())
+                # Store the result in Supabase (if available)
+                if "Error" not in reply and SUPABASE_AVAILABLE and get_supabase_client is not None:
+                    try:
+                        supabase = get_supabase_client()
+                        db_record = {
+                            "turn_id": turn_id,
+                            "project_id": project_id,
+                            "raw_text": text,
+                            "normalized_json": {
+                                "response_text": reply,
+                                "ai_model": model_used,
+                                "tokens_used": tokens_used,
+                                "timestamp": str(uuid.uuid4())
+                            }
                         }
-                    }
-                    response = supabase.table("turns").insert([db_record]).execute()
-                    if not response.data:
-                        print("Warning: Failed to store chat metadata in Supabase")
+                        response = supabase.table("turns").insert([db_record]).execute()
+                        if not response.data:
+                            print("Warning: Failed to store chat metadata in Supabase")
+                    except Exception as turns_error:
+                        print(f"Warning: Failed to store turns data (non-critical): {str(turns_error)}")
+                        # Continue with dossier update even if turns storage fails
 
                     # Update dossier if needed
                     should_update = False
@@ -176,6 +179,7 @@ async def rewrite_ask(chat_request: ChatRequest):
 
                 except Exception as db_error:
                     print(f"Database error (non-critical): {str(db_error)}")
+                    # Continue execution even if database operations fail
 
             # Send metadata chunk
             metadata_chunk = {
