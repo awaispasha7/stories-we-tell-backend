@@ -9,7 +9,7 @@ from datetime import datetime
 
 from ..models import (
     User, UserCreate, Session, SessionCreate, SessionSummary,
-    ChatMessage, ChatMessageCreate, UserProject
+    ChatMessage, ChatMessageCreate, UserProject, Dossier, DossierCreate, DossierUpdate
 )
 from .supabase import get_supabase_client
 
@@ -207,6 +207,76 @@ class SessionService:
         }
         
         result = supabase.table("sessions").update(update_data).eq("session_id", str(session_id)).eq("user_id", str(user_id)).execute()
+        
+        return len(result.data) > 0 if result.data else False
+    
+    # Dossier Management
+    def create_dossier(self, dossier_data: DossierCreate) -> Dossier:
+        """Create a new dossier for a user"""
+        supabase = self.get_supabase()
+        
+        dossier_record = {
+            "project_id": str(dossier_data.project_id),
+            "user_id": str(dossier_data.user_id),
+            "snapshot_json": dossier_data.snapshot_json or {
+                "title": "New Project",
+                "logline": "",
+                "characters": [],
+                "scenes": []
+            },
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        result = supabase.table("dossier").insert(dossier_record).execute()
+        
+        if result.data:
+            return Dossier(**result.data[0])
+        else:
+            raise Exception("Failed to create dossier")
+    
+    def get_user_dossiers(self, user_id: UUID) -> List[Dossier]:
+        """Get all dossiers for a user"""
+        supabase = self.get_supabase()
+        
+        result = supabase.table("dossier").select("*").eq("user_id", str(user_id)).order("updated_at", desc=True).execute()
+        
+        if result.data:
+            return [Dossier(**dossier) for dossier in result.data]
+        return []
+    
+    def get_dossier(self, project_id: UUID, user_id: UUID) -> Optional[Dossier]:
+        """Get a specific dossier for a user"""
+        supabase = self.get_supabase()
+        
+        result = supabase.table("dossier").select("*").eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
+        
+        if result.data and len(result.data) > 0:
+            return Dossier(**result.data[0])
+        return None
+    
+    def update_dossier(self, project_id: UUID, user_id: UUID, dossier_data: DossierUpdate) -> Optional[Dossier]:
+        """Update a dossier for a user"""
+        supabase = self.get_supabase()
+        
+        update_data = {
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        if dossier_data.snapshot_json is not None:
+            update_data["snapshot_json"] = dossier_data.snapshot_json
+        
+        result = supabase.table("dossier").update(update_data).eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
+        
+        if result.data and len(result.data) > 0:
+            return Dossier(**result.data[0])
+        return None
+    
+    def delete_dossier(self, project_id: UUID, user_id: UUID) -> bool:
+        """Delete a dossier for a user"""
+        supabase = self.get_supabase()
+        
+        result = supabase.table("dossier").delete().eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
         
         return len(result.data) > 0 if result.data else False
     

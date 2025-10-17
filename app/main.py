@@ -3,14 +3,50 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 
 # Import routes with error handling
+ROUTES_AVAILABLE = True
+AUTH_AVAILABLE = True
+
+# Import individual routes with error handling
+chat = None
+transcribe = None
+chat_sessions = None
+auth = None
+dossier = None
+
 try:
-    from app.api import chat, transcribe, chat_sessions, auth
-    ROUTES_AVAILABLE = True
-    AUTH_AVAILABLE = True
+    from app.api import chat
+    print("✅ Chat router imported")
 except Exception as e:
-    print(f"Warning: Some routes not available: {e}")
-    ROUTES_AVAILABLE = False
-    AUTH_AVAILABLE = False
+    print(f"❌ Error importing chat router: {e}")
+    chat = None
+
+try:
+    from app.api import transcribe
+    print("✅ Transcribe router imported")
+except Exception as e:
+    print(f"❌ Error importing transcribe router: {e}")
+    transcribe = None
+
+try:
+    from app.api import chat_sessions
+    print("✅ Chat sessions router imported")
+except Exception as e:
+    print(f"❌ Error importing chat_sessions router: {e}")
+    chat_sessions = None
+
+try:
+    from app.api import auth
+    print("✅ Auth router imported")
+except Exception as e:
+    print(f"❌ Error importing auth router: {e}")
+    auth = None
+
+try:
+    from app.api import dossier
+    print("✅ Dossier router imported")
+except Exception as e:
+    print(f"❌ Error importing dossier router: {e}")
+    dossier = None
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -26,37 +62,41 @@ app.add_middleware(
     max_age=3600,  # Cache preflight response for 1 hour
 )
 
-# Include routes with error handling
-if ROUTES_AVAILABLE:
+# Include routes with individual error handling
+if chat:
     try:
-        # Include the chat route (legacy)
         app.include_router(chat.router)
         print("✅ Chat router included")
     except Exception as e:
         print(f"❌ Error including chat router: {e}")
 
+if chat_sessions:
     try:
-        # Include the new chat sessions route
         app.include_router(chat_sessions.router, prefix="/api/v1", tags=["chat-sessions"])
         print("✅ Chat sessions router included")
     except Exception as e:
         print(f"❌ Error including chat sessions router: {e}")
 
+if auth:
     try:
-        # Include the auth route
         app.include_router(auth.router, prefix="/api/v1/auth", tags=["authentication"])
         print("✅ Auth router included")
     except Exception as e:
         print(f"❌ Error including auth router: {e}")
 
+if transcribe:
     try:
-        # Include the transcribe route
         app.include_router(transcribe.router)
         print("✅ Transcribe router included")
     except Exception as e:
         print(f"❌ Error including transcribe router: {e}")
-else:
-    print("❌ Routes not available - running in minimal mode")
+
+if dossier:
+    try:
+        app.include_router(dossier.router, prefix="/api/v1", tags=["dossier"])
+        print("✅ Dossier router included")
+    except Exception as e:
+        print(f"❌ Error including dossier router: {e}")
 
 # Add root route to handle 404 errors
 @app.get("/")
@@ -71,7 +111,14 @@ async def health_check():
         "message": "Backend is running",
         "cors_enabled": True,
         "allowed_origins": ["*"],  # All origins allowed
-        "endpoints": ["/chat", "/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup"]
+        "endpoints": ["/chat", "/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/dossiers"],
+        "routes_available": {
+            "chat": chat is not None,
+            "chat_sessions": chat_sessions is not None,
+            "auth": auth is not None,
+            "transcribe": transcribe is not None,
+            "dossier": dossier is not None
+        }
     }
 
 # Add simple test endpoint

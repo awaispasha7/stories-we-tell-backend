@@ -89,11 +89,56 @@ class SceneMetadata(BaseModel):
     tone: Optional[str] = None
 
 class Dossier(BaseModel):
-    title: Optional[str] = None
-    logline: Optional[str] = None
-    genre: Optional[str] = None
-    tone: Optional[str] = None
-    scenes: List[SceneMetadata] = []
+    project_id: UUID
+    user_id: UUID
+    snapshot_json: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
+    # Convenience properties for accessing snapshot data
+    @property
+    def title(self) -> Optional[str]:
+        if self.snapshot_json:
+            return self.snapshot_json.get('title')
+        return None
+    
+    @property
+    def logline(self) -> Optional[str]:
+        if self.snapshot_json:
+            return self.snapshot_json.get('logline')
+        return None
+    
+    @property
+    def genre(self) -> Optional[str]:
+        if self.snapshot_json:
+            return self.snapshot_json.get('genre')
+        return None
+    
+    @property
+    def tone(self) -> Optional[str]:
+        if self.snapshot_json:
+            return self.snapshot_json.get('tone')
+        return None
+    
+    @property
+    def scenes(self) -> List[SceneMetadata]:
+        if self.snapshot_json and 'scenes' in self.snapshot_json:
+            return [SceneMetadata(**scene) for scene in self.snapshot_json['scenes']]
+        return []
+    
+    @property
+    def characters(self) -> List[CharacterMetadata]:
+        if self.snapshot_json and 'characters' in self.snapshot_json:
+            return [CharacterMetadata(**char) for char in self.snapshot_json['characters']]
+        return []
+
+class DossierCreate(BaseModel):
+    project_id: UUID
+    user_id: UUID
+    snapshot_json: Optional[Dict[str, Any]] = None
+
+class DossierUpdate(BaseModel):
+    snapshot_json: Optional[Dict[str, Any]] = None
 
 # User Project Association
 class UserProject(BaseModel):
