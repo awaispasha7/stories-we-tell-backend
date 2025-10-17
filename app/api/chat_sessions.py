@@ -37,6 +37,35 @@ router = APIRouter()
 ANONYMOUS_SESSIONS: Dict[str, Dict] = {}
 ANONYMOUS_SESSION_TIMEOUT = 30 * 60  # 30 minutes in seconds
 
+async def ensure_anonymous_user_exists(session_id: str) -> str:
+    """Create or get a temporary user for anonymous sessions"""
+    try:
+        # Check if we already have a user for this session
+        result = supabase.table("users").select("user_id").eq("email", f"anonymous_{session_id}@temp.local").execute()
+        
+        if result.data:
+            return result.data[0]["user_id"]
+        
+        # Create a new temporary user
+        temp_user_data = {
+            "email": f"anonymous_{session_id}@temp.local",
+            "display_name": f"Anonymous User {session_id[:8]}",
+            "avatar_url": None
+        }
+        
+        result = supabase.table("users").insert(temp_user_data).execute()
+        if result.data:
+            user_id = result.data[0]["user_id"]
+            print(f"🆕 Created temporary user for anonymous session: {user_id}")
+            return user_id
+        else:
+            raise Exception("Failed to create temporary user")
+            
+    except Exception as e:
+        print(f"❌ Error creating anonymous user: {e}")
+        # Fallback to a generic anonymous user ID
+        return "00000000-0000-0000-0000-000000000000"
+
 class AnonymousSession:
     """Manages anonymous user sessions with timeout"""
     
@@ -194,12 +223,23 @@ async def chat_with_session(
                     session.session_id, user_id, context_limit=10
                 )
             else:
-                # Anonymous user - use in-memory session
+                # Anonymous user - use in-memory session AND create database session
                 anonymous_session = AnonymousSession.get_session(session_id)
                 if not anonymous_session:
                     raise HTTPException(status_code=410, detail="Anonymous session expired. Please sign in to continue.")
                 
                 print(f"📋 Using anonymous session: {session_id}")
+                
+                # Create temporary user for this anonymous session
+                temp_user_id = await ensure_anonymous_user_exists(session_id)
+                
+                # Create database session for anonymous user
+                session = session_service.get_or_create_session(
+                    user_id=temp_user_id,
+                    project_id=chat_request.project_id or uuid4(),
+                    session_id=session_id,
+                    title=f"Anonymous Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                )
                 
                 # Get conversation history from anonymous session
                 conversation_history = [
@@ -219,6 +259,10 @@ async def chat_with_session(
                 history_for_ai = conversation_history
             
             print(f"📚 Conversation history length: {len(history_for_ai)} messages")
+            if history_for_ai:
+                print(f"📚 Last few messages in history:")
+                for i, msg in enumerate(history_for_ai[-3:]):
+                    print(f"  {i+1}. {msg['role']}: {msg['content'][:50]}...")
 
             # Store user message based on user type
             if user_id is not None:
@@ -229,12 +273,26 @@ async def chat_with_session(
                     "content": text
                 })
             else:
-                # Anonymous user - store in memory
+                # Anonymous user - store in database (temp_user_id already created above)
+                user_message = session_service.create_message({
+                    "session_id": session.session_id,
+                    "role": "user",
+                    "content": text
+                })
+                
+                # Also store in memory for immediate access
                 anonymous_session["messages"].append({
                     "role": "user",
                     "content": text,
                     "timestamp": time.time()
                 })
+                
+                # Update conversation history for anonymous users after storing the message
+                conversation_history = [
+                    {"role": msg["role"], "content": msg["content"]}
+                    for msg in anonymous_session["messages"]
+                ]
+                history_for_ai = conversation_history
 
             # Check if AI is available
             if not AI_AVAILABLE or ai_manager is None or TaskType is None:
@@ -290,7 +348,18 @@ async def chat_with_session(
                     }
                 })
             else:
-                # Anonymous user - store in memory
+                # Anonymous user - store in database AND memory
+                assistant_message = session_service.create_message({
+                    "session_id": session.session_id,
+                    "role": "assistant",
+                    "content": reply,
+                    "metadata": {
+                        "model_used": model_used,
+                        "tokens_used": tokens_used
+                    }
+                })
+                
+                # Also store in memory for immediate access
                 anonymous_session["messages"].append({
                     "role": "assistant",
                     "content": reply,
@@ -526,3 +595,46 @@ async def get_anonymous_session(session_id: str):
     except Exception as e:
         print(f"❌ Error getting anonymous session: {e}")
         raise HTTPException(status_code=500, detail="Failed to get anonymous session")
+
+@router.post("/migrate-anonymous-session")
+async def migrate_anonymous_session(
+    session_id: str,
+    new_user_id: str
+):
+    """Migrate anonymous session data to a real user account"""
+    try:
+        # Get the temporary user ID for this session
+        temp_user_result = supabase.table("users").select("user_id").eq("email", f"anonymous_{session_id}@temp.local").execute()
+        
+        if not temp_user_result.data:
+            raise HTTPException(status_code=404, detail="Anonymous session not found")
+        
+        temp_user_id = temp_user_result.data[0]["user_id"]
+        
+        # Update all sessions to use the new user ID
+        supabase.table("sessions").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+        
+        # Update all messages to use the new user ID
+        supabase.table("chat_messages").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+        
+        # Update all turns to use the new user ID
+        supabase.table("turns").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+        
+        # Update all dossiers to use the new user ID
+        supabase.table("dossier").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+        
+        # Update all user_projects to use the new user ID
+        supabase.table("user_projects").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+        
+        # Delete the temporary user
+        supabase.table("users").delete().eq("user_id", temp_user_id).execute()
+        
+        # Clean up the anonymous session from memory
+        if session_id in ANONYMOUS_SESSIONS:
+            del ANONYMOUS_SESSIONS[session_id]
+        
+        return {"message": "Anonymous session data migrated successfully"}
+        
+    except Exception as e:
+        print(f"❌ Error migrating anonymous session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to migrate anonymous session data")
