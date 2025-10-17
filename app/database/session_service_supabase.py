@@ -41,8 +41,19 @@ class SessionService:
             "avatar_url": user_data.avatar_url
         }
         
-        # Use upsert to handle existing users
-        result = supabase.table("users").upsert(user_record, on_conflict="user_id").execute()
+        # Try to insert first, if it fails due to conflict, try to update
+        try:
+            result = supabase.table("users").insert(user_record).execute()
+        except Exception as e:
+            # If insert fails (likely due to email conflict), try to update
+            if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+                result = supabase.table("users").update({
+                    "display_name": user_data.display_name,
+                    "avatar_url": user_data.avatar_url,
+                    "updated_at": datetime.now().isoformat()
+                }).eq("email", user_data.email).execute()
+            else:
+                raise e
         
         if result.data:
             return User(**result.data[0])
@@ -96,7 +107,10 @@ class SessionService:
         supabase = self.get_supabase()
         session_id = uuid4()
         
-        # First, ensure user owns the project
+        # First, ensure the project/dossier exists
+        self.ensure_project_exists(session_data.project_id, session_data.user_id)
+        
+        # Then, ensure user owns the project
         self.associate_user_project(session_data.user_id, session_data.project_id)
         
         session_record = {
@@ -395,6 +409,31 @@ class SessionService:
             messages.append(message)
         
         return messages
+    
+    # Project/Dossier Management
+    def ensure_project_exists(self, project_id: UUID, user_id: UUID) -> None:
+        """Ensure a project/dossier exists, create if it doesn't"""
+        supabase = self.get_supabase()
+        
+        # Check if project exists
+        result = supabase.table("dossier").select("project_id").eq("project_id", str(project_id)).execute()
+        
+        if not result.data:
+            # Create a default dossier/project
+            dossier_record = {
+                "project_id": str(project_id),
+                "user_id": str(user_id),
+                "snapshot_json": {
+                    "title": "New Project",
+                    "logline": "",
+                    "characters": [],
+                    "scenes": []
+                },
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            supabase.table("dossier").insert(dossier_record).execute()
     
     # User-Project Association
     def associate_user_project(self, user_id: UUID, project_id: UUID) -> UserProject:
