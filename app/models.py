@@ -88,6 +88,12 @@ class SceneMetadata(BaseModel):
     time_of_day: Optional[str] = None
     tone: Optional[str] = None
 
+class CharacterMetadata(BaseModel):
+    character_id: str
+    name: Optional[str] = None
+    description: Optional[str] = None
+    role: Optional[str] = None
+
 class Dossier(BaseModel):
     project_id: UUID
     user_id: UUID
