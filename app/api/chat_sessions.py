@@ -702,7 +702,7 @@ async def update_session_title(
 @router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: UUID,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_user_id_only)
 ):
     """Delete (deactivate) a session"""
     try:
