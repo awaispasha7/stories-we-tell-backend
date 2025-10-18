@@ -38,10 +38,9 @@ async def get_or_create_default_user() -> UUID:
         raise HTTPException(status_code=500, detail="No users available and cannot create default user")
 
 def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> UUID:
-    """Get current user ID from header (temporary implementation)"""
+    """Get current user ID from header"""
     if not x_user_id:
-        # Use the existing user from your database (Awais Pasha)
-        return UUID("cd32c283-7d54-479d-a54b-de88152d4d93")
+        raise HTTPException(status_code=401, detail="User authentication required")
     
     try:
         return UUID(x_user_id)

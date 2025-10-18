@@ -532,6 +532,31 @@ async def chat_with_session(
                     }
                 })
 
+            # Create turn record for both user types
+            try:
+                turn_id = uuid4()
+                turn_record = {
+                    "turn_id": str(turn_id),
+                    "user_id": str(user_id) if user_id else str(temp_user_id),
+                    "project_id": str(session.project_id),
+                    "raw_text": text,
+                    "normalized_json": {
+                        "response_text": reply,
+                        "ai_model": model_used,
+                        "tokens_used": tokens_used,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+                
+                supabase = get_supabase_client()
+                turn_result = supabase.table("turns").insert([turn_record]).execute()
+                if turn_result.data:
+                    print(f"✅ Created turn record: {turn_id}")
+                else:
+                    print("⚠️ Failed to create turn record")
+            except Exception as turn_error:
+                print(f"⚠️ Failed to create turn (non-critical): {turn_error}")
+
             # Update dossier if needed (existing logic)
             if AI_AVAILABLE and dossier_extractor is not None:
                 try:
