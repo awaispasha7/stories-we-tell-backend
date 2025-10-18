@@ -109,7 +109,7 @@ async def rewrite_ask(chat_request: ChatRequest):
             ])
 
             # Metadata to send to frontend
-            metadata = {
+    metadata = {
                 "turn_id": turn_id,
                 "project_id": project_id,
                 "raw_text": text,
@@ -125,7 +125,7 @@ async def rewrite_ask(chat_request: ChatRequest):
                         db_record = {
                             "turn_id": turn_id,
                             "project_id": project_id,
-                            "raw_text": text,
+        "raw_text": text,
                             "normalized_json": {
                                 "response_text": reply,
                                 "ai_model": model_used,

@@ -136,6 +136,71 @@ class AnonymousSession:
         for session_id in expired_sessions:
             del ANONYMOUS_SESSIONS[session_id]
             print(f"🧹 Cleaned up expired session: {session_id}")
+    
+    @staticmethod
+    async def cleanup_expired_anonymous_users():
+        """Delete expired anonymous users and their associated data from Supabase"""
+        try:
+            supabase = get_supabase_client()
+            
+            # Get all anonymous users (those with email pattern anonymous_*@temp.local)
+            result = supabase.table("users").select("user_id, email, created_at").like("email", "anonymous_%@temp.local").execute()
+            
+            if not result.data:
+                print("No anonymous users found for cleanup")
+                return
+            
+            current_time = datetime.now()
+            deleted_count = 0
+            
+            for user in result.data:
+                user_id = user["user_id"]
+                email = user["email"]
+                created_at = datetime.fromisoformat(user["created_at"].replace('Z', '+00:00'))
+                
+                # Check if user is older than timeout period
+                if (current_time - created_at).total_seconds() > ANONYMOUS_SESSION_TIMEOUT:
+                    print(f"🧹 Cleaning up expired anonymous user: {email}")
+                    
+                    try:
+                        # Delete in order to respect foreign key constraints
+                        # Keep chat messages and turns for data analysis - just anonymize them
+                        
+                        # 1. Anonymize chat messages (set user_id to NULL or a special anonymous user)
+                        supabase.table("chat_messages").update({"user_id": None}).eq("user_id", user_id).execute()
+                        print(f"   Anonymized chat messages for user {user_id}")
+                        
+                        # 2. Anonymize turns (set user_id to NULL or a special anonymous user)
+                        supabase.table("turns").update({"user_id": None}).eq("user_id", user_id).execute()
+                        print(f"   Anonymized turns for user {user_id}")
+                        
+                        # 3. Delete dossier (this is user-specific)
+                        supabase.table("dossier").delete().eq("user_id", user_id).execute()
+                        print(f"   Deleted dossier for user {user_id}")
+                        
+                        # 4. Delete user_projects
+                        supabase.table("user_projects").delete().eq("user_id", user_id).execute()
+                        print(f"   Deleted user_projects for user {user_id}")
+                        
+                        # 5. Delete sessions
+                        supabase.table("sessions").delete().eq("user_id", user_id).execute()
+                        print(f"   Deleted sessions for user {user_id}")
+                        
+                        # 6. Finally delete the user
+                        supabase.table("users").delete().eq("user_id", user_id).execute()
+                        print(f"   Deleted user {user_id}")
+                        
+                        deleted_count += 1
+                        print(f"✅ Successfully cleaned up anonymous user: {email} (messages preserved)")
+                        
+                    except Exception as user_cleanup_error:
+                        print(f"❌ Error cleaning up user {user_id}: {user_cleanup_error}")
+                        continue
+            
+            print(f"🧹 Database cleanup completed: {deleted_count} expired anonymous users removed")
+            
+        except Exception as e:
+            print(f"❌ Error during database cleanup: {e}")
 
 # Temporary user management (in production, use proper auth)
 TEMP_USERS = {
@@ -598,6 +663,12 @@ async def get_current_user(user_id: UUID = Depends(get_current_user_id)):
 async def create_anonymous_session():
     """Create a new anonymous session for users who haven't signed in"""
     try:
+        # Clean up expired anonymous users from database
+        await AnonymousSession.cleanup_expired_anonymous_users()
+        
+        # Clean up expired in-memory sessions
+        AnonymousSession.cleanup_expired_sessions()
+        
         session_id = AnonymousSession.create_session()
         session = AnonymousSession.get_session(session_id)
         
@@ -610,6 +681,21 @@ async def create_anonymous_session():
     except Exception as e:
         print(f"❌ Error creating anonymous session: {e}")
         raise HTTPException(status_code=500, detail="Failed to create anonymous session")
+
+@router.post("/cleanup-expired-sessions")
+async def cleanup_expired_sessions():
+    """Manually trigger cleanup of expired anonymous sessions and users"""
+    try:
+        # Clean up in-memory sessions
+        AnonymousSession.cleanup_expired_sessions()
+        
+        # Clean up database records
+        await AnonymousSession.cleanup_expired_anonymous_users()
+        
+        return {"message": "Expired sessions and users cleaned up successfully"}
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cleanup expired sessions")
 
 
 @router.get("/anonymous-session/{session_id}")
