@@ -146,9 +146,22 @@ async def rewrite_ask(chat_request: ChatRequest):
                     
                     print(f"🔍 AI_AVAILABLE: {AI_AVAILABLE}, dossier_extractor: {dossier_extractor is not None}")
                     
+                    # First, check if dossier exists
+                    print(f"🔍 Checking existing dossier for project {project_id}")
+                    existing = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
+                    print(f"🔍 Existing dossier data: {existing.data}")
+                    dossier_exists = existing.data and len(existing.data) > 0
+                    
                     if AI_AVAILABLE and dossier_extractor is not None:
-                        should_update = await dossier_extractor.should_update_dossier(conversation_history)
-                        print(f"🔍 Should update dossier: {should_update}")
+                        # If dossier doesn't exist, always create one
+                        if not dossier_exists:
+                            print("📊 Creating new dossier - none exists for this project")
+                            should_update = True
+                        else:
+                            # If dossier exists, use LLM to decide if we should update
+                            should_update = await dossier_extractor.should_update_dossier(conversation_history)
+                            print(f"🔍 Should update existing dossier: {should_update}")
+                        
                         if should_update:
                             print("📊 Updating dossier using AI extractor...")
                             dossier_data = await dossier_extractor.extract_metadata(conversation_history)
@@ -164,11 +177,7 @@ async def rewrite_ask(chat_request: ChatRequest):
                             "snapshot_json": dossier_data
                         }
 
-                        print(f"🔍 Checking existing dossier for project {project_id}")
-                        existing = supabase.table("dossier").select("*").eq("project_id", project_id).execute()
-                        print(f"🔍 Existing dossier data: {existing.data}")
-
-                        if existing.data and len(existing.data) > 0:
+                        if dossier_exists:
                             print(f"🔍 Updating existing dossier record")
                             update_response = supabase.table("dossier").update(dossier_record).eq("project_id", project_id).execute()
                             print(f"✅ Updated dossier for project {project_id}: {update_response.data}")
