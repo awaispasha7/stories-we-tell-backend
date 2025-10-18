@@ -706,14 +706,21 @@ async def delete_session(
 ):
     """Delete (deactivate) a session"""
     try:
+        print(f"🗑️ Attempting to delete session {session_id} for user {user_id}")
         success = session_service.deactivate_session(session_id, user_id)
+        print(f"🗑️ Deactivate session result: {success}")
         if not success:
+            print(f"❌ Session {session_id} not found for user {user_id}")
             raise HTTPException(status_code=404, detail="Session not found")
+        print(f"✅ Session {session_id} deleted successfully")
         return {"message": "Session deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error deleting session: {e}")
+        print(f"❌ Error deleting session {session_id}: {e}")
+        print(f"❌ Error type: {type(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to delete session")
 
 

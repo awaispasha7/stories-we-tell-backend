@@ -291,14 +291,27 @@ class SessionService:
         """Deactivate a session (soft delete)"""
         supabase = self.get_supabase()
         
+        print(f"🗑️ Deactivating session {session_id} for user {user_id}")
+        
         update_data = {
             "is_active": False,
             "updated_at": datetime.now().isoformat()
         }
         
-        result = supabase.table("sessions").update(update_data).eq("session_id", str(session_id)).eq("user_id", str(user_id)).execute()
+        print(f"🗑️ Update data: {update_data}")
         
-        return len(result.data) > 0 if result.data else False
+        try:
+            result = supabase.table("sessions").update(update_data).eq("session_id", str(session_id)).eq("user_id", str(user_id)).execute()
+            print(f"🗑️ Supabase update result: {result}")
+            print(f"🗑️ Result data: {result.data}")
+            print(f"🗑️ Result count: {result.count}")
+            
+            success = len(result.data) > 0 if result.data else False
+            print(f"🗑️ Deactivation success: {success}")
+            return success
+        except Exception as e:
+            print(f"❌ Error in deactivate_session: {e}")
+            raise
     
     # Dossier Management
     def create_dossier(self, dossier_data: DossierCreate) -> Dossier:
