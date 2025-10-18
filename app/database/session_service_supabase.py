@@ -80,14 +80,17 @@ class SessionService:
             # If insert fails (likely due to user_id conflict), try to update
             if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower() or "409" in str(e):
                 print(f"User {auth_user_id} already exists, updating...")
-                result = supabase.table("users").update({
+                update_result = supabase.table("users").update({
                     "email": email,
                     "display_name": display_name or email.split('@')[0] if email else None,
                     "avatar_url": avatar_url,
                     "updated_at": datetime.now().isoformat()
                 }).eq("user_id", auth_user_id).execute()
+                
+                # Fetch the updated user data
+                result = supabase.table("users").select("*").eq("user_id", auth_user_id).execute()
                 if not result.data:
-                    raise Exception("No data returned from update")
+                    raise Exception("User not found after update")
             else:
                 print(f"Insert error: {e}")
                 raise e
