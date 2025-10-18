@@ -813,11 +813,17 @@ async def get_anonymous_session(session_id: str):
 
 @router.post("/migrate-anonymous-session")
 async def migrate_anonymous_session(
-    session_id: str,
-    new_user_id: str
+    request: dict
 ):
     """Migrate anonymous session data to a real user account"""
     global CLEANUP_IN_PROGRESS
+    
+    # Extract parameters from request body
+    session_id = request.get("anonymous_session_id")
+    new_user_id = request.get("user_id")
+    
+    if not session_id or not new_user_id:
+        raise HTTPException(status_code=400, detail="Missing anonymous_session_id or user_id")
     
     # Prevent cleanup during migration
     if CLEANUP_IN_PROGRESS:
