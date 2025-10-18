@@ -63,8 +63,18 @@ async def ensure_anonymous_user_exists(session_id: str) -> str:
             
     except Exception as e:
         print(f"❌ Error creating anonymous user: {e}")
-        # Fallback to a generic anonymous user ID
-        return "00000000-0000-0000-0000-000000000000"
+        # Try to get any existing user as fallback
+        try:
+            fallback_result = supabase.table("users").select("user_id").limit(1).execute()
+            if fallback_result.data:
+                fallback_user_id = fallback_result.data[0]["user_id"]
+                print(f"🔄 Using fallback user: {fallback_user_id}")
+                return fallback_user_id
+        except Exception as fallback_error:
+            print(f"❌ Fallback user lookup failed: {fallback_error}")
+        
+        # If all else fails, raise the error
+        raise HTTPException(status_code=500, detail="Unable to create or find user for anonymous session")
 
 class AnonymousSession:
     """Manages anonymous user sessions with timeout"""
@@ -231,15 +241,24 @@ async def chat_with_session(
                 print(f"📋 Using anonymous session: {session_id}")
                 
                 # Create temporary user for this anonymous session
-                temp_user_id = await ensure_anonymous_user_exists(session_id)
-                
-                # Create database session for anonymous user
-                session = session_service.get_or_create_session(
-                    user_id=temp_user_id,
-                    project_id=chat_request.project_id or uuid4(),
-                    session_id=session_id,
-                    title=f"Anonymous Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                )
+                try:
+                    temp_user_id = await ensure_anonymous_user_exists(session_id)
+                    
+                    # Create database session for anonymous user
+                    session = session_service.get_or_create_session(
+                        user_id=temp_user_id,
+                        project_id=chat_request.project_id or uuid4(),
+                        session_id=session_id,
+                        title=f"Anonymous Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    )
+                    print(f"✅ Created database session for anonymous user: {temp_user_id}")
+                except Exception as session_error:
+                    print(f"⚠️ Failed to create database session for anonymous user: {session_error}")
+                    # Create a minimal session object for compatibility
+                    class MinimalSession:
+                        def __init__(self, session_id):
+                            self.session_id = session_id
+                    session = MinimalSession(session_id)
                 
                 # Get conversation history from anonymous session
                 conversation_history = [
@@ -274,11 +293,16 @@ async def chat_with_session(
                 })
             else:
                 # Anonymous user - store in database (temp_user_id already created above)
-                user_message = session_service.create_message({
-                    "session_id": session.session_id,
-                    "role": "user",
-                    "content": text
-                })
+                try:
+                    user_message = session_service.create_message({
+                        "session_id": session.session_id,
+                        "role": "user",
+                        "content": text
+                    })
+                    print(f"✅ Stored user message in database for anonymous session")
+                except Exception as db_error:
+                    print(f"⚠️ Failed to store user message in database: {db_error}")
+                    # Continue with in-memory storage only
                 
                 # Also store in memory for immediate access
                 anonymous_session["messages"].append({
@@ -349,15 +373,20 @@ async def chat_with_session(
                 })
             else:
                 # Anonymous user - store in database AND memory
-                assistant_message = session_service.create_message({
-                    "session_id": session.session_id,
-                    "role": "assistant",
-                    "content": reply,
-                    "metadata": {
-                        "model_used": model_used,
-                        "tokens_used": tokens_used
-                    }
-                })
+                try:
+                    assistant_message = session_service.create_message({
+                        "session_id": session.session_id,
+                        "role": "assistant",
+                        "content": reply,
+                        "metadata": {
+                            "model_used": model_used,
+                            "tokens_used": tokens_used
+                        }
+                    })
+                    print(f"✅ Stored assistant message in database for anonymous session")
+                except Exception as db_error:
+                    print(f"⚠️ Failed to store assistant message in database: {db_error}")
+                    # Continue with in-memory storage only
                 
                 # Also store in memory for immediate access
                 anonymous_session["messages"].append({
