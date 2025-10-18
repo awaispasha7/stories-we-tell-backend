@@ -9,9 +9,20 @@ from uuid import UUID, uuid4
 
 from ..models import Dossier, DossierCreate, DossierUpdate
 from ..database.session_service_supabase import session_service
-from .chat_sessions import get_user_id_only
 
 router = APIRouter()
+
+def get_user_id_only(x_user_id: Optional[str] = Header(None)) -> UUID:
+    """Get user ID from header, with fallback to default user"""
+    if x_user_id:
+        try:
+            return UUID(x_user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user ID format")
+    
+    # Fallback to default user - use a hardcoded user ID for now
+    # This should be the same user ID that's being used in the frontend
+    return UUID("6b7088ad-e032-44ac-8561-11a9abd80000")
 
 async def get_or_create_default_user() -> UUID:
     """Get the first available user or create a default one"""
