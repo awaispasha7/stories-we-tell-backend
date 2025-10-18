@@ -64,6 +64,25 @@ class SessionService:
         """Create a user from Supabase auth user data using the auth user's ID"""
         supabase = self.get_supabase()
         
+        # First, check if a user with this email already exists
+        existing_user = supabase.table("users").select("*").eq("email", email).execute()
+        if existing_user.data:
+            print(f"User with email {email} already exists with ID {existing_user.data[0]['user_id']}")
+            # Update the existing user with new auth data
+            update_result = supabase.table("users").update({
+                "user_id": auth_user_id,  # Update to the new auth user ID
+                "display_name": display_name or email.split('@')[0] if email else None,
+                "avatar_url": avatar_url,
+                "updated_at": datetime.now().isoformat()
+            }).eq("email", email).execute()
+            
+            # Fetch the updated user data
+            result = supabase.table("users").select("*").eq("user_id", auth_user_id).execute()
+            if result.data:
+                return User(**result.data[0])
+            else:
+                raise Exception(f"Failed to update existing user {email} with new auth ID {auth_user_id}")
+        
         user_record = {
             "user_id": auth_user_id,  # Use the auth user's ID directly
             "email": email,
@@ -80,17 +99,28 @@ class SessionService:
             # If insert fails (likely due to user_id conflict), try to update
             if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower() or "409" in str(e):
                 print(f"User {auth_user_id} already exists, updating...")
-                update_result = supabase.table("users").update({
+                update_data = {
                     "email": email,
                     "display_name": display_name or email.split('@')[0] if email else None,
                     "avatar_url": avatar_url,
                     "updated_at": datetime.now().isoformat()
-                }).eq("user_id", auth_user_id).execute()
+                }
+                print(f"Update data: {update_data}")
+                update_result = supabase.table("users").update(update_data).eq("user_id", auth_user_id).execute()
+                print(f"Update result: {update_result.data}")
+                
+                # Add a small delay to ensure the update is committed
+                import time
+                time.sleep(0.1)
                 
                 # Fetch the updated user data
                 result = supabase.table("users").select("*").eq("user_id", auth_user_id).execute()
                 print(f"User fetch result: {result.data}")
                 if not result.data:
+                    # Try fetching by email as well
+                    email_result = supabase.table("users").select("*").eq("email", email).execute()
+                    print(f"User fetch by email result: {email_result.data}")
+                    
                     # Try to fetch all users to debug
                     all_users = supabase.table("users").select("*").execute()
                     print(f"All users in database: {all_users.data}")
