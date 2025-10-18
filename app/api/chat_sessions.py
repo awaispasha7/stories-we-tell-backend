@@ -54,26 +54,26 @@ async def ensure_anonymous_user_exists(session_id: str) -> str:
         }
         
         result = supabase.table("users").insert(temp_user_data).execute()
-        print(f"🔍 User creation result: {result}")
+        print(f"[DEBUG] User creation result: {result}")
         if result.data:
             user_id = result.data[0]["user_id"]
-            print(f"🆕 Created temporary user for anonymous session: {user_id}")
+            print(f"[SUCCESS] Created temporary user for anonymous session: {user_id}")
             return user_id
         else:
-            print(f"❌ No data returned from user creation: {result}")
+            print(f"[ERROR] No data returned from user creation: {result}")
             raise Exception("Failed to create temporary user")
             
     except Exception as e:
-        print(f"❌ Error creating anonymous user: {e}")
+        print(f"[ERROR] Error creating anonymous user: {e}")
         # Try to get any existing user as fallback
         try:
             fallback_result = supabase.table("users").select("user_id").limit(1).execute()
             if fallback_result.data:
                 fallback_user_id = fallback_result.data[0]["user_id"]
-                print(f"🔄 Using fallback user: {fallback_user_id}")
+                print(f"[FALLBACK] Using fallback user: {fallback_user_id}")
                 return fallback_user_id
         except Exception as fallback_error:
-            print(f"❌ Fallback user lookup failed: {fallback_error}")
+            print(f"[ERROR] Fallback user lookup failed: {fallback_error}")
         
         # If all else fails, raise the error
         raise HTTPException(status_code=500, detail="Unable to create or find user for anonymous session")
@@ -247,16 +247,16 @@ async def chat_with_session(
                     temp_user_id = await ensure_anonymous_user_exists(session_id)
                     
                     # Create database session for anonymous user
-                    print(f"🔍 Creating session with user_id: {temp_user_id}, session_id: {session_id}")
+                    print(f"[DEBUG] Creating session with user_id: {temp_user_id}, session_id: {session_id}")
                     session = session_service.get_or_create_session(
                         user_id=temp_user_id,
                         project_id=chat_request.project_id or uuid4(),
                         session_id=session_id,
                         title=f"Anonymous Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
                     )
-                    print(f"✅ Created database session for anonymous user: {temp_user_id}, session: {session.session_id}")
+                    print(f"[SUCCESS] Created database session for anonymous user: {temp_user_id}, session: {session.session_id}")
                 except Exception as session_error:
-                    print(f"⚠️ Failed to create database session for anonymous user: {session_error}")
+                    print(f"[ERROR] Failed to create database session for anonymous user: {session_error}")
                     # Create a minimal session object for compatibility
                     class MinimalSession:
                         def __init__(self, session_id):
@@ -297,15 +297,15 @@ async def chat_with_session(
             else:
                 # Anonymous user - store in database (temp_user_id already created above)
                 try:
-                    print(f"🔍 Storing user message: session_id={session.session_id}, content='{text[:50]}...'")
+                    print(f"[DEBUG] Storing user message: session_id={session.session_id}, content='{text[:50]}...'")
                     user_message = session_service.create_message({
                         "session_id": session.session_id,
                         "role": "user",
                         "content": text
                     })
-                    print(f"✅ Stored user message in database for anonymous session: {user_message}")
+                    print(f"[SUCCESS] Stored user message in database for anonymous session: {user_message}")
                 except Exception as db_error:
-                    print(f"⚠️ Failed to store user message in database: {db_error}")
+                    print(f"[ERROR] Failed to store user message in database: {db_error}")
                     # Continue with in-memory storage only
                 
                 # Also store in memory for immediate access
