@@ -167,6 +167,7 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
             # Metadata to send to frontend
     metadata = {
                 "turn_id": turn_id,
+                "session_id": session_id,
                 "project_id": project_id,
                 "raw_text": text,
                 "response_text": reply,
