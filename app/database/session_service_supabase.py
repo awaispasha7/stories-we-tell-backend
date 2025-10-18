@@ -89,8 +89,12 @@ class SessionService:
                 
                 # Fetch the updated user data
                 result = supabase.table("users").select("*").eq("user_id", auth_user_id).execute()
+                print(f"User fetch result: {result.data}")
                 if not result.data:
-                    raise Exception("User not found after update")
+                    # Try to fetch all users to debug
+                    all_users = supabase.table("users").select("*").execute()
+                    print(f"All users in database: {all_users.data}")
+                    raise Exception(f"User {auth_user_id} not found after update")
             else:
                 print(f"Insert error: {e}")
                 raise e
