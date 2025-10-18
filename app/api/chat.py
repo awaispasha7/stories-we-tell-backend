@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from app.models import ChatRequest, ChatResponse  # Import Pydantic models
 import uuid
@@ -37,9 +37,10 @@ conversation_sessions = {}
 
 
 @router.post("/chat")
-async def rewrite_ask(chat_request: ChatRequest):
+async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
     text = chat_request.text
     print(f"🔵 Received chat request: '{text[:100]}...'")
+    print(f"🔍 AI_AVAILABLE: {AI_AVAILABLE}, dossier_extractor available: {dossier_extractor is not None}")
 
     async def generate_stream():
         try:
@@ -55,7 +56,36 @@ async def rewrite_ask(chat_request: ChatRequest):
 
             # Get conversation history for context
             conversation_history = conversation_sessions[session_id]["history"]
-            print(f"📚 Conversation history length: {len(conversation_history)} messages")
+            print(f"📚 In-memory conversation history length: {len(conversation_history)} messages")
+            
+            # Load full conversation history from database for dossier updates
+            try:
+                from app.database.session_service_supabase import SessionServiceSupabase
+                session_service = SessionServiceSupabase()
+                
+                # Get user_id from the header or session
+                user_id = x_user_id
+                if not user_id and session_id in conversation_sessions:
+                    user_id = conversation_sessions[session_id].get('user_id')
+                
+                if user_id:
+                    print(f"📚 Loading conversation history from database for session {session_id}, user {user_id}")
+                    db_messages = session_service.get_session_messages(session_id, user_id, limit=50, offset=0)
+                    # Convert database messages to conversation history format
+                    db_conversation_history = []
+                    for msg in db_messages:
+                        db_conversation_history.append({
+                            "role": msg.role,
+                            "content": msg.content
+                        })
+                    print(f"📚 Database conversation history length: {len(db_conversation_history)} messages")
+                    # Use database history for dossier updates
+                    conversation_history = db_conversation_history
+                else:
+                    print(f"⚠️ No user_id available, using in-memory conversation history")
+            except Exception as e:
+                print(f"⚠️ Failed to load conversation history from database: {e}")
+                print(f"📚 Using in-memory conversation history: {len(conversation_history)} messages")
 
             # Check if AI is available
             if not AI_AVAILABLE or ai_manager is None or TaskType is None:
@@ -170,6 +200,19 @@ async def rewrite_ask(chat_request: ChatRequest):
                             print("🔍 Dossier update skipped - LLM decided not to update")
                     else:
                         print("🔍 Dossier update skipped - AI not available or dossier_extractor is None")
+                        # Fallback: create basic dossier if none exists
+                        if not dossier_exists:
+                            print("📊 Creating basic dossier - AI not available but no dossier exists")
+                            should_update = True
+                            dossier_data = {
+                                "title": "Untitled Story",
+                                "logline": "A compelling story waiting to be told...",
+                                "genre": "Unknown",
+                                "tone": "Unknown",
+                                "characters": [],
+                                "scenes": [],
+                                "locations": []
+                            }
 
                     if should_update and dossier_data:
                         dossier_record = {
