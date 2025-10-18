@@ -74,17 +74,22 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
                 
                 if user_id:
                     print(f"📚 Loading conversation history from database for session {session_id}, user {user_id}")
-                    db_messages = session_service.get_session_messages(session_id, user_id, limit=50, offset=0)
-                    # Convert database messages to conversation history format
-                    db_conversation_history = []
-                    for msg in db_messages:
-                        db_conversation_history.append({
-                            "role": msg.role,
-                            "content": msg.content
-                        })
-                    print(f"📚 Database conversation history length: {len(db_conversation_history)} messages")
-                    # Use database history for dossier updates
-                    conversation_history = db_conversation_history
+                    try:
+                        db_messages = session_service.get_session_messages(session_id, user_id, limit=50, offset=0)
+                        print(f"📚 Raw database messages: {len(db_messages)} messages")
+                        # Convert database messages to conversation history format
+                        db_conversation_history = []
+                        for msg in db_messages:
+                            db_conversation_history.append({
+                                "role": msg.role,
+                                "content": msg.content
+                            })
+                        print(f"📚 Database conversation history length: {len(db_conversation_history)} messages")
+                        # Use database history for dossier updates
+                        conversation_history = db_conversation_history
+                    except Exception as db_error:
+                        print(f"❌ Error loading conversation history from database: {db_error}")
+                        print(f"📚 Using in-memory conversation history: {len(conversation_history)} messages")
                 else:
                     print(f"⚠️ No user_id available, using in-memory conversation history")
             except Exception as e:
