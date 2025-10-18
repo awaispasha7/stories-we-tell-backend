@@ -257,6 +257,7 @@ async def chat_with_session(
                         title=f"Anonymous Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
                     )
                     print(f"[SUCCESS] Created database session for anonymous user: {temp_user_id}, session: {session.session_id}")
+                    print(f"[DEBUG] Session object type: {type(session)}, has session_id attr: {hasattr(session, 'session_id')}")
                 except Exception as session_error:
                     print(f"[ERROR] Failed to create database session for anonymous user: {session_error}")
                     # Create a minimal session object for compatibility
@@ -301,6 +302,7 @@ async def chat_with_session(
                 # Anonymous user - store in database (temp_user_id already created above)
                 try:
                     print(f"[DEBUG] Storing user message: session_id={session.session_id}, content='{text[:50]}...'")
+                    print(f"[DEBUG] Session object before message storage: type={type(session)}, session_id={getattr(session, 'session_id', 'NO_ATTR')}")
                     user_message = session_service.create_message({
                         "session_id": session.session_id,
                         "role": "user",
