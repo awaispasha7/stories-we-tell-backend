@@ -37,6 +37,7 @@ router = APIRouter()
 # Anonymous session management
 ANONYMOUS_SESSIONS: Dict[str, Dict] = {}
 ANONYMOUS_SESSION_TIMEOUT = 30 * 60  # 30 minutes in seconds
+CLEANUP_IN_PROGRESS = False  # Global lock to prevent concurrent cleanup
 
 async def ensure_anonymous_user_exists(session_id: str) -> str:
     """Create or get a temporary user for anonymous sessions"""
@@ -140,17 +141,29 @@ class AnonymousSession:
     @staticmethod
     async def cleanup_expired_anonymous_users():
         """Delete expired anonymous users and their associated data from Supabase"""
+        global CLEANUP_IN_PROGRESS
+        
+        # Prevent concurrent cleanup operations
+        if CLEANUP_IN_PROGRESS:
+            print("🧹 Cleanup already in progress, skipping...")
+            return
+        
+        CLEANUP_IN_PROGRESS = True
         try:
             supabase = get_supabase_client()
             
             # Get all anonymous users (those with email pattern anonymous_*@temp.local)
+            # Add a safety buffer - only clean up users that are significantly past timeout
+            safety_buffer = 5 * 60  # 5 minutes safety buffer
+            cutoff_time = datetime.now() - timedelta(seconds=ANONYMOUS_SESSION_TIMEOUT + safety_buffer)
+            
+            # Get users with their last activity from sessions table
             result = supabase.table("users").select("user_id, email, created_at").like("email", "anonymous_%@temp.local").execute()
             
             if not result.data:
                 print("No anonymous users found for cleanup")
                 return
             
-            current_time = datetime.now()
             deleted_count = 0
             
             for user in result.data:
@@ -158,19 +171,46 @@ class AnonymousSession:
                 email = user["email"]
                 created_at = datetime.fromisoformat(user["created_at"].replace('Z', '+00:00'))
                 
-                # Check if user is older than timeout period
-                if (current_time - created_at).total_seconds() > ANONYMOUS_SESSION_TIMEOUT:
-                    print(f"🧹 Cleaning up expired anonymous user: {email}")
+                # Check if user has recent activity (last message or session activity)
+                # Get the most recent activity for this user
+                recent_activity = None
+                
+                # Check for recent chat messages
+                messages_result = supabase.table("chat_messages").select("created_at").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+                if messages_result.data:
+                    recent_activity = datetime.fromisoformat(messages_result.data[0]["created_at"].replace('Z', '+00:00'))
+                
+                # Check for recent session activity
+                sessions_result = supabase.table("sessions").select("last_message_at, updated_at").eq("user_id", user_id).order("updated_at", desc=True).limit(1).execute()
+                if sessions_result.data:
+                    session_data = sessions_result.data[0]
+                    session_activity = None
+                    if session_data.get("last_message_at"):
+                        session_activity = datetime.fromisoformat(session_data["last_message_at"].replace('Z', '+00:00'))
+                    elif session_data.get("updated_at"):
+                        session_activity = datetime.fromisoformat(session_data["updated_at"].replace('Z', '+00:00'))
+                    
+                    if session_activity and (not recent_activity or session_activity > recent_activity):
+                        recent_activity = session_activity
+                
+                # Use the most recent activity or creation time if no activity found
+                last_activity = recent_activity or created_at
+                
+                # Only clean up users that are significantly past timeout (with safety buffer)
+                # AND have no recent activity
+                if created_at < cutoff_time and last_activity < cutoff_time:
+                    print(f"🧹 Cleaning up expired anonymous user: {email} (created: {created_at}, last activity: {last_activity})")
                     
                     try:
+                        # Use a transaction-like approach with individual error handling
                         # Delete in order to respect foreign key constraints
                         # Keep chat messages and turns for data analysis - just anonymize them
                         
-                        # 1. Anonymize chat messages (set user_id to NULL or a special anonymous user)
+                        # 1. Anonymize chat messages (set user_id to NULL)
                         supabase.table("chat_messages").update({"user_id": None}).eq("user_id", user_id).execute()
                         print(f"   Anonymized chat messages for user {user_id}")
                         
-                        # 2. Anonymize turns (set user_id to NULL or a special anonymous user)
+                        # 2. Anonymize turns (set user_id to NULL)
                         supabase.table("turns").update({"user_id": None}).eq("user_id", user_id).execute()
                         print(f"   Anonymized turns for user {user_id}")
                         
@@ -196,11 +236,21 @@ class AnonymousSession:
                     except Exception as user_cleanup_error:
                         print(f"❌ Error cleaning up user {user_id}: {user_cleanup_error}")
                         continue
+                else:
+                    if created_at >= cutoff_time:
+                        print(f"⏳ User {email} not yet eligible for cleanup (created: {created_at})")
+                    elif last_activity >= cutoff_time:
+                        print(f"⏳ User {email} has recent activity (last activity: {last_activity})")
+                    else:
+                        print(f"⏳ User {email} not eligible for cleanup (created: {created_at}, last activity: {last_activity})")
             
             print(f"🧹 Database cleanup completed: {deleted_count} expired anonymous users removed")
             
         except Exception as e:
             print(f"❌ Error during database cleanup: {e}")
+        finally:
+            # Always release the lock
+            CLEANUP_IN_PROGRESS = False
 
 # Temporary user management (in production, use proper auth)
 TEMP_USERS = {
@@ -726,6 +776,13 @@ async def migrate_anonymous_session(
     new_user_id: str
 ):
     """Migrate anonymous session data to a real user account"""
+    global CLEANUP_IN_PROGRESS
+    
+    # Prevent cleanup during migration
+    if CLEANUP_IN_PROGRESS:
+        print("⚠️ Migration blocked: cleanup in progress")
+        raise HTTPException(status_code=409, detail="System maintenance in progress. Please try again in a moment.")
+    
     try:
         # Get the temporary user ID for this session
         supabase = get_supabase_client()
