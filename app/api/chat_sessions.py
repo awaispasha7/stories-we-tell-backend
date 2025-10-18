@@ -302,6 +302,15 @@ def get_current_user_id(x_user_id: Optional[str] = Header(None), x_session_id: O
     # No user ID and no session ID - create new anonymous session
     return None, None
 
+def get_user_id_only(x_user_id: Optional[str] = Header(None)) -> Optional[UUID]:
+    """Get current user ID from headers (for endpoints that only need user ID)"""
+    if x_user_id:
+        try:
+            return UUID(x_user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user ID format")
+    return None
+
 
 @router.post("/chat")
 async def chat_with_session(
@@ -601,10 +610,12 @@ async def chat_with_session(
 @router.get("/sessions", response_model=List[SessionSummary])
 async def get_user_sessions(
     limit: int = 10,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: Optional[UUID] = Depends(get_user_id_only)
 ):
     """Get user's chat sessions"""
     try:
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User authentication required")
         sessions = session_service.get_user_sessions(user_id, limit)
         return sessions
     except Exception as e:
@@ -617,10 +628,13 @@ async def get_session_messages(
     session_id: UUID,
     limit: int = 50,
     offset: int = 0,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: Optional[UUID] = Depends(get_user_id_only)
 ):
     """Get messages for a specific session"""
     try:
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User authentication required")
+        
         # Verify session ownership
         session = session_service.get_session(session_id, user_id)
         if not session:
@@ -695,9 +709,11 @@ async def create_user(user_data: UserCreate):
 
 
 @router.get("/users/me", response_model=dict)
-async def get_current_user(user_id: UUID = Depends(get_current_user_id)):
+async def get_current_user(user_id: Optional[UUID] = Depends(get_user_id_only)):
     """Get current user information"""
     try:
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User authentication required")
         user = session_service.get_user(user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
