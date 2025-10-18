@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from ..models import Dossier, DossierCreate, DossierUpdate
 from ..database.session_service_supabase import session_service
+from .chat_sessions import get_user_id_only
 
 router = APIRouter()
 
@@ -48,7 +49,7 @@ def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> UUID:
         raise HTTPException(status_code=400, detail="Invalid user ID format")
 
 @router.get("/dossiers", response_model=List[Dossier])
-async def get_user_dossiers(user_id: UUID = Depends(get_current_user_id)):
+async def get_user_dossiers(user_id: UUID = Depends(get_user_id_only)):
     """Get all dossiers for the current user"""
     # Use the existing user from your database (Awais Pasha)
     print(f"✅ Using user: {user_id}")
@@ -62,7 +63,7 @@ async def get_user_dossiers(user_id: UUID = Depends(get_current_user_id)):
 @router.get("/dossiers/{project_id}", response_model=Dossier)
 async def get_dossier(
     project_id: UUID, 
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_user_id_only)
 ):
     """Get a specific dossier for the current user"""
     try:
@@ -78,7 +79,7 @@ async def get_dossier(
 @router.post("/dossiers", response_model=Dossier)
 async def create_dossier(
     dossier_data: DossierCreate,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_user_id_only)
 ):
     """Create a new dossier for the current user"""
     try:
@@ -94,7 +95,7 @@ async def create_dossier(
 async def update_dossier(
     project_id: UUID,
     dossier_data: DossierUpdate,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_user_id_only)
 ):
     """Update a dossier for the current user"""
     try:
@@ -110,7 +111,7 @@ async def update_dossier(
 @router.delete("/dossiers/{project_id}")
 async def delete_dossier(
     project_id: UUID,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_user_id_only)
 ):
     """Delete a dossier for the current user"""
     try:
@@ -126,7 +127,7 @@ async def delete_dossier(
 @router.post("/dossiers/{project_id}/initialize")
 async def initialize_dossier(
     project_id: UUID,
-    user_id: UUID = Depends(get_current_user_id)
+    user_id: UUID = Depends(get_user_id_only)
 ):
     """Initialize a new dossier with default structure"""
     try:
