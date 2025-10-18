@@ -271,7 +271,9 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
                 "type": "metadata",
                 "metadata": metadata
             }
+            print(f"📤 Sending metadata chunk: {metadata_chunk}")
             yield f"data: {json.dumps(metadata_chunk)}\n\n"
+            print(f"✅ Metadata chunk sent")
 
         except Exception as e:
             print(f"❌ Chat API error: {str(e)}")
