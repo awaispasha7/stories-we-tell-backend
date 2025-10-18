@@ -62,6 +62,7 @@ class ChatMessageCreate(BaseModel):
     session_id: UUID
     role: str
     content: str
+    turn_id: Optional[UUID] = None
     metadata: Optional[Dict[str, Any]] = None
 
 class ChatRequest(BaseModel):
