@@ -839,32 +839,33 @@ async def migrate_anonymous_session(
         raise HTTPException(status_code=409, detail="System maintenance in progress. Please try again in a moment.")
     
     try:
-        # Get the temporary user ID for this session
+        # Get the temporary user ID for this session (if it exists in database)
         supabase = get_supabase_client()
         temp_user_result = supabase.table("users").select("user_id").eq("email", f"anonymous_{session_id}@temp.local").execute()
         
-        if not temp_user_result.data:
-            raise HTTPException(status_code=404, detail="Anonymous session not found")
+        temp_user_id = None
+        if temp_user_result.data:
+            temp_user_id = temp_user_result.data[0]["user_id"]
+            
+            # Update all sessions to use the new user ID
+            supabase.table("sessions").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+            
+            # Update all messages to use the new user ID
+            supabase.table("chat_messages").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+            
+            # Update all turns to use the new user ID
+            supabase.table("turns").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
         
-        temp_user_id = temp_user_result.data[0]["user_id"]
-        
-        # Update all sessions to use the new user ID
-        supabase.table("sessions").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
-        
-        # Update all messages to use the new user ID
-        supabase.table("chat_messages").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
-        
-        # Update all turns to use the new user ID
-        supabase.table("turns").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
-        
-        # Update all dossiers to use the new user ID
-        supabase.table("dossier").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
-        
-        # Update all user_projects to use the new user ID
-        supabase.table("user_projects").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
-        
-        # Delete the temporary user
-        supabase.table("users").delete().eq("user_id", temp_user_id).execute()
+        # Only update database records if temp_user_id exists
+        if temp_user_id:
+            # Update all dossiers to use the new user ID
+            supabase.table("dossier").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+            
+            # Update all user_projects to use the new user ID
+            supabase.table("user_projects").update({"user_id": new_user_id}).eq("user_id", temp_user_id).execute()
+            
+            # Delete the temporary user
+            supabase.table("users").delete().eq("user_id", temp_user_id).execute()
         
         # Clean up the anonymous session from memory
         if session_id in ANONYMOUS_SESSIONS:
