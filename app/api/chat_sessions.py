@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from ..models import (
     ChatRequest, ChatResponse, SessionSummary, ChatMessage,
-    UserCreate, SessionCreate
+    UserCreate, SessionCreate, ChatMessageCreate
 )
 from ..database.session_service_supabase import session_service
 from ..database.supabase import get_supabase_client
@@ -293,21 +293,21 @@ async def chat_with_session(
             # Store user message based on user type
             if user_id is not None:
                 # Authenticated user - store in database
-                user_message = session_service.create_message({
-                    "session_id": session.session_id,
-                    "role": "user",
-                    "content": text
-                })
+                user_message = session_service.create_message(ChatMessageCreate(
+                    session_id=session.session_id,
+                    role="user",
+                    content=text
+                ))
             else:
                 # Anonymous user - store in database (temp_user_id already created above)
                 try:
                     print(f"[DEBUG] Storing user message: session_id={session.session_id}, content='{text[:50]}...'")
                     print(f"[DEBUG] Session object before message storage: type={type(session)}, session_id={getattr(session, 'session_id', 'NO_ATTR')}")
-                    user_message = session_service.create_message({
-                        "session_id": session.session_id,
-                        "role": "user",
-                        "content": text
-                    })
+                    user_message = session_service.create_message(ChatMessageCreate(
+                        session_id=session.session_id,
+                        role="user",
+                        content=text
+                    ))
                     print(f"[SUCCESS] Stored user message in database for anonymous session: {user_message}")
                 except Exception as db_error:
                     print(f"[ERROR] Failed to store user message in database: {db_error}")
@@ -371,27 +371,27 @@ async def chat_with_session(
             # Store assistant message based on user type
             if user_id is not None:
                 # Authenticated user - store in database
-                assistant_message = session_service.create_message({
-                    "session_id": session.session_id,
-                    "role": "assistant",
-                    "content": reply,
-                    "metadata": {
+                assistant_message = session_service.create_message(ChatMessageCreate(
+                    session_id=session.session_id,
+                    role="assistant",
+                    content=reply,
+                    metadata={
                         "model_used": model_used,
                         "tokens_used": tokens_used
                     }
-                })
+                ))
             else:
                 # Anonymous user - store in database AND memory
                 try:
-                    assistant_message = session_service.create_message({
-                        "session_id": session.session_id,
-                        "role": "assistant",
-                        "content": reply,
-                        "metadata": {
+                    assistant_message = session_service.create_message(ChatMessageCreate(
+                        session_id=session.session_id,
+                        role="assistant",
+                        content=reply,
+                        metadata={
                             "model_used": model_used,
                             "tokens_used": tokens_used
                         }
-                    })
+                    ))
                     print(f"✅ Stored assistant message in database for anonymous session")
                 except Exception as db_error:
                     print(f"⚠️ Failed to store assistant message in database: {db_error}")
