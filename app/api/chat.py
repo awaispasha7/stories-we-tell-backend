@@ -47,10 +47,25 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
             print(f"🟡 Starting response generation for: '{text[:50]}...'")
 
             # Get or create session
-            session_id = chat_request.session_id or str(uuid.uuid4())
-            project_id = chat_request.project_id or str(uuid.uuid4())
+            # Treat empty strings and None as missing values
+            session_id = chat_request.session_id if chat_request.session_id else None
+            project_id = chat_request.project_id if chat_request.project_id else None
             
-            print(f"🔍 Using session_id: {session_id}, project_id: {project_id}")
+            # Only generate new UUIDs if both are missing (new chat)
+            if not session_id and not project_id:
+                session_id = str(uuid.uuid4())
+                project_id = str(uuid.uuid4())
+                print(f"🆕 Creating new session: {session_id}, project: {project_id}")
+            elif session_id and not project_id:
+                # If we have session but no project, this shouldn't happen - generate project
+                project_id = str(uuid.uuid4())
+                print(f"⚠️ Session exists but no project, generating project: {project_id}")
+            elif not session_id and project_id:
+                # If we have project but no session, generate session
+                session_id = str(uuid.uuid4())
+                print(f"⚠️ Project exists but no session, generating session: {session_id}")
+            else:
+                print(f"🔄 Continuing existing session: {session_id}, project: {project_id}")
             
             if session_id not in conversation_sessions:
                 conversation_sessions[session_id] = {
