@@ -153,3 +153,8 @@ class UserProject(BaseModel):
     user_id: UUID
     project_id: UUID
     created_at: Optional[datetime] = None
+
+# Migration Request
+class MigrationRequest(BaseModel):
+    anonymous_session_id: str
+    user_id: str

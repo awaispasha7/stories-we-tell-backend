@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from ..models import (
     ChatRequest, ChatResponse, SessionSummary, ChatMessage,
-    UserCreate, SessionCreate, ChatMessageCreate
+    UserCreate, SessionCreate, ChatMessageCreate, MigrationRequest
 )
 from ..database.session_service_supabase import session_service
 from ..database.supabase import get_supabase_client
@@ -348,11 +348,13 @@ async def chat_with_session(
             # Handle session based on user type
             if user_id is not None:
                 # Authenticated user - use database session
+                # Use first message as title, or default if no message yet
+                session_title = text[:50] + "..." if len(text) > 50 else text
                 session = session_service.get_or_create_session(
                     user_id=user_id,
                     project_id=chat_request.project_id or uuid4(),
                     session_id=chat_request.session_id,
-                    title=f"Chat Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    title=session_title
                 )
                 print(f"📋 Using authenticated session: {session.session_id}")
                 
@@ -374,11 +376,13 @@ async def chat_with_session(
                     
                     # Create database session for anonymous user
                     print(f"[DEBUG] Creating session with user_id: {temp_user_id}, session_id: {session_id}")
+                    # Use first message as title for anonymous sessions too
+                    session_title = text[:50] + "..." if len(text) > 50 else text
                     session = session_service.get_or_create_session(
                         user_id=temp_user_id,
                         project_id=chat_request.project_id or uuid4(),
                         session_id=session_id,
-                        title=f"Anonymous Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                        title=session_title
                     )
                     print(f"[SUCCESS] Created database session for anonymous user: {temp_user_id}, session: {session.session_id}")
                     print(f"[DEBUG] Session object type: {type(session)}, has session_id attr: {hasattr(session, 'session_id')}")
@@ -813,17 +817,14 @@ async def get_anonymous_session(session_id: str):
 
 @router.post("/migrate-anonymous-session")
 async def migrate_anonymous_session(
-    request: dict
+    request: MigrationRequest
 ):
     """Migrate anonymous session data to a real user account"""
     global CLEANUP_IN_PROGRESS
     
     # Extract parameters from request body
-    session_id = request.get("anonymous_session_id")
-    new_user_id = request.get("user_id")
-    
-    if not session_id or not new_user_id:
-        raise HTTPException(status_code=400, detail="Missing anonymous_session_id or user_id")
+    session_id = request.anonymous_session_id
+    new_user_id = request.user_id
     
     # Prevent cleanup during migration
     if CLEANUP_IN_PROGRESS:
