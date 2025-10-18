@@ -17,6 +17,7 @@ from ..models import (
     UserCreate, SessionCreate
 )
 from ..database.session_service_supabase import session_service
+from ..database.supabase import supabase
 
 # Try to import AI components with error handling
 try:
@@ -262,6 +263,7 @@ async def chat_with_session(
                         def __init__(self, session_id):
                             self.session_id = session_id
                     session = MinimalSession(session_id)
+                    print(f"[DEBUG] Created minimal session with ID: {session.session_id}")
                 
                 # Get conversation history from anonymous session
                 conversation_history = [
