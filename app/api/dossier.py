@@ -77,14 +77,19 @@ async def get_dossier(
     user_id: UUID = Depends(get_user_id_only)
 ):
     """Get a specific dossier for the current user"""
+    print(f"🔍 [DOSSIER] get_dossier called - project_id: {project_id}, user_id: {user_id}")
     try:
         dossier = session_service.get_dossier(project_id, user_id)
+        print(f"🔍 [DOSSIER] Result from session_service.get_dossier: {dossier}")
         if not dossier:
+            print(f"❌ [DOSSIER] Dossier not found for project_id: {project_id}, user_id: {user_id}")
             raise HTTPException(status_code=404, detail="Dossier not found")
+        print(f"✅ [DOSSIER] Returning dossier: {dossier.project_id if hasattr(dossier, 'project_id') else 'unknown'}")
         return dossier
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ [DOSSIER] Exception in get_dossier: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch dossier: {str(e)}")
 
 @router.post("/dossiers", response_model=Dossier)

@@ -352,10 +352,15 @@ class SessionService:
         """Get a specific dossier for a user"""
         supabase = self.get_supabase()
         
+        print(f"🔍 [DB] get_dossier query - project_id: {project_id}, user_id: {user_id}")
         result = supabase.table("dossier").select("*").eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
+        print(f"🔍 [DB] get_dossier result.data: {result.data}")
+        print(f"🔍 [DB] get_dossier result.data length: {len(result.data) if result.data else 0}")
         
         if result.data and len(result.data) > 0:
+            print(f"✅ [DB] Found dossier, returning: {result.data[0].get('project_id', 'unknown')}")
             return Dossier(**result.data[0])
+        print(f"❌ [DB] No dossier found, returning None")
         return None
     
     def update_dossier(self, project_id: UUID, user_id: UUID, dossier_data: DossierUpdate) -> Optional[Dossier]:
