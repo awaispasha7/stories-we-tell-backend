@@ -47,10 +47,14 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
             print(f"🟡 Starting response generation for: '{text[:50]}...'")
 
             # Get or create session
-            session_id = "default_session"
+            session_id = chat_request.session_id or str(uuid.uuid4())
+            project_id = chat_request.project_id or str(uuid.uuid4())
+            
+            print(f"🔍 Using session_id: {session_id}, project_id: {project_id}")
+            
             if session_id not in conversation_sessions:
                 conversation_sessions[session_id] = {
-                    "project_id": str(uuid.uuid4()),
+                    "project_id": project_id,
                     "history": []
                 }
 
@@ -97,7 +101,7 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
                 # Generate response using AI
                 ai_response = await ai_manager.generate_response(
                     task_type=TaskType.CHAT,
-                    prompt=text,
+        prompt=text,
                     conversation_history=conversation_history,
                     max_tokens=500,
                     temperature=0.7
@@ -130,7 +134,9 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
 
             # Send final metadata
             turn_id = str(uuid.uuid4())
-            project_id = conversation_sessions[session_id]["project_id"]
+            # Use the project_id from the request or session
+            if not project_id:
+                project_id = conversation_sessions[session_id]["project_id"]
 
             # Add to conversation history
             conversation_sessions[session_id]["history"].extend([
