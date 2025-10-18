@@ -241,19 +241,25 @@ async def rewrite_ask(chat_request: ChatRequest, x_user_id: str = Header(None)):
                             }
 
                     if should_update and dossier_data:
-                        dossier_record = {
-                            "project_id": project_id,
-                            "snapshot_json": dossier_data
-                        }
-
-                        if dossier_exists:
-                            print(f"🔍 Updating existing dossier record")
-                            update_response = supabase.table("dossier").update(dossier_record).eq("project_id", project_id).execute()
-                            print(f"✅ Updated dossier for project {project_id}: {update_response.data}")
+                        # Get user_id for the dossier record
+                        dossier_user_id = x_user_id if x_user_id else None
+                        if not dossier_user_id:
+                            print("⚠️ No user_id available for dossier, skipping dossier update")
                         else:
-                            print(f"🔍 Creating new dossier record")
-                            insert_response = supabase.table("dossier").insert([dossier_record]).execute()
-                            print(f"✅ Created dossier for project {project_id}: {insert_response.data}")
+                            dossier_record = {
+                                "project_id": project_id,
+                                "user_id": dossier_user_id,
+                                "snapshot_json": dossier_data
+                            }
+
+                            if dossier_exists:
+                                print(f"🔍 Updating existing dossier record for user {dossier_user_id}")
+                                update_response = supabase.table("dossier").update(dossier_record).eq("project_id", project_id).eq("user_id", dossier_user_id).execute()
+                                print(f"✅ Updated dossier for project {project_id}: {update_response.data}")
+                            else:
+                                print(f"🔍 Creating new dossier record for user {dossier_user_id}")
+                                insert_response = supabase.table("dossier").insert([dossier_record]).execute()
+                                print(f"✅ Created dossier for project {project_id}: {insert_response.data}")
 
                 except Exception as db_error:
                     print(f"Database error (non-critical): {str(db_error)}")
