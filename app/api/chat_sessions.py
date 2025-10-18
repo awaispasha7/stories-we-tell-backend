@@ -17,7 +17,7 @@ from ..models import (
     UserCreate, SessionCreate
 )
 from ..database.session_service_supabase import session_service
-from ..database.supabase import supabase
+from ..database.supabase import get_supabase_client
 
 # Try to import AI components with error handling
 try:
@@ -42,6 +42,7 @@ async def ensure_anonymous_user_exists(session_id: str) -> str:
     """Create or get a temporary user for anonymous sessions"""
     try:
         # Check if we already have a user for this session
+        supabase = get_supabase_client()
         result = supabase.table("users").select("user_id").eq("email", f"anonymous_{session_id}@temp.local").execute()
         
         if result.data:
@@ -639,6 +640,7 @@ async def migrate_anonymous_session(
     """Migrate anonymous session data to a real user account"""
     try:
         # Get the temporary user ID for this session
+        supabase = get_supabase_client()
         temp_user_result = supabase.table("users").select("user_id").eq("email", f"anonymous_{session_id}@temp.local").execute()
         
         if not temp_user_result.data:
