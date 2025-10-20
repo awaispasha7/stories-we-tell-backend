@@ -420,16 +420,49 @@ async def chat_with_session(
 
             # Create a turn ID for this user/assistant exchange before storing messages
             turn_id = uuid4()
+            print(f"🔄 Generated turn_id: {turn_id}")
+
+            # Create turn record FIRST before storing messages
+            try:
+                turn_record = {
+                    "turn_id": str(turn_id),
+                    "session_id": str(session.session_id),
+                    "user_id": str(user_id) if user_id else str(temp_user_id),
+                    "project_id": str(session.project_id),
+                    "raw_text": text,
+                    "normalized_json": {
+                        "response_text": "",  # Will be updated after AI response
+                        "ai_model": "",
+                        "tokens_used": 0,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+                
+                supabase = get_supabase_client()
+                print(f"🔄 Creating turn record: {turn_record}")
+                turn_result = supabase.table("turns").insert([turn_record]).execute()
+                print(f"🔄 Turn insert result: {turn_result}")
+                if turn_result.data:
+                    print(f"✅ Created turn record: {turn_id}")
+                else:
+                    print(f"⚠️ Failed to create turn record: {turn_result}")
+                    print(f"⚠️ Turn result error: {turn_result.error if hasattr(turn_result, 'error') else 'No error attribute'}")
+                    raise Exception(f"Failed to create turn record: {turn_result}")
+            except Exception as turn_error:
+                print(f"❌ Failed to create turn record: {turn_error}")
+                raise Exception(f"Could not create turn record: {turn_error}")
 
             # Store user message based on user type
             if user_id is not None:
                 # Authenticated user - store in database
+                print(f"💾 Storing user message with turn_id: {turn_id}")
                 user_message = session_service.create_message(ChatMessageCreate(
                     session_id=session.session_id,
                     turn_id=turn_id,
                     role="user",
                     content=text
                 ))
+                print(f"✅ User message stored with turn_id: {turn_id}")
             else:
                 # Anonymous user - store in database (temp_user_id already created above)
                 try:
@@ -504,6 +537,7 @@ async def chat_with_session(
             # Store assistant message based on user type
             if user_id is not None:
                 # Authenticated user - store in database
+                print(f"💾 Storing assistant message with turn_id: {turn_id}")
                 assistant_message = session_service.create_message(ChatMessageCreate(
                     session_id=session.session_id,
                     turn_id=turn_id,
@@ -514,6 +548,7 @@ async def chat_with_session(
                         "tokens_used": tokens_used
                     }
                 ))
+                print(f"✅ Assistant message stored with turn_id: {turn_id}")
             else:
                 # Anonymous user - store in database AND memory
                 try:
@@ -543,13 +578,10 @@ async def chat_with_session(
                     }
                 })
 
-            # Create turn record for both user types (reuse the same turn_id)
+            # Update turn record with AI response data
             try:
-                turn_record = {
-                    "turn_id": str(turn_id),
-                    "user_id": str(user_id) if user_id else str(temp_user_id),
-                    "project_id": str(session.project_id),
-                    "raw_text": text,
+                supabase = get_supabase_client()
+                update_data = {
                     "normalized_json": {
                         "response_text": reply,
                         "ai_model": model_used,
@@ -557,15 +589,14 @@ async def chat_with_session(
                         "timestamp": datetime.now().isoformat()
                     }
                 }
-                
-                supabase = get_supabase_client()
-                turn_result = supabase.table("turns").insert([turn_record]).execute()
-                if turn_result.data:
-                    print(f"✅ Created turn record: {turn_id}")
+                print(f"🔄 Updating turn record with AI response: {turn_id}")
+                update_result = supabase.table("turns").update(update_data).eq("turn_id", str(turn_id)).execute()
+                if update_result.data:
+                    print(f"✅ Updated turn record with AI response: {turn_id}")
                 else:
-                    print("⚠️ Failed to create turn record")
-            except Exception as turn_error:
-                print(f"⚠️ Failed to create turn (non-critical): {turn_error}")
+                    print(f"⚠️ Failed to update turn record: {update_result}")
+            except Exception as update_error:
+                print(f"⚠️ Failed to update turn record (non-critical): {update_error}")
 
             # Update dossier if needed (existing logic)
             if AI_AVAILABLE and dossier_extractor is not None:
