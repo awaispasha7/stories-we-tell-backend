@@ -24,7 +24,7 @@ try:
     from ..ai.models import ai_manager, TaskType
     from ..ai.dossier_extractor import dossier_extractor
     AI_AVAILABLE = True
-    print("✅ AI components imported successfully")
+    print(" AI components imported successfully")
 except Exception as e:
     print(f"Warning: AI components not available: {e}")
     AI_AVAILABLE = False
@@ -94,7 +94,7 @@ class AnonymousSession:
             "messages": [],
             "project_id": str(uuid4())
         }
-        print(f"🆕 Created anonymous session: {session_id}")
+        print(f" Created anonymous session: {session_id}")
         return session_id
     
     @staticmethod
@@ -108,7 +108,7 @@ class AnonymousSession:
         
         # Check if session has expired
         if current_time - session["last_activity"] > ANONYMOUS_SESSION_TIMEOUT:
-            print(f"⏰ Anonymous session expired: {session_id}")
+            print(f" Anonymous session expired: {session_id}")
             del ANONYMOUS_SESSIONS[session_id]
             return None
         
@@ -136,7 +136,7 @@ class AnonymousSession:
         
         for session_id in expired_sessions:
             del ANONYMOUS_SESSIONS[session_id]
-            print(f"🧹 Cleaned up expired session: {session_id}")
+            print(f" Cleaned up expired session: {session_id}")
     
     @staticmethod
     async def cleanup_expired_anonymous_users():
@@ -145,7 +145,7 @@ class AnonymousSession:
         
         # Prevent concurrent cleanup operations
         if CLEANUP_IN_PROGRESS:
-            print("🧹 Cleanup already in progress, skipping...")
+            print(" Cleanup already in progress, skipping...")
             return
         
         CLEANUP_IN_PROGRESS = True
@@ -199,7 +199,7 @@ class AnonymousSession:
                 # Only clean up users that are significantly past timeout (with safety buffer)
                 # AND have no recent activity
                 if created_at < cutoff_time and last_activity < cutoff_time:
-                    print(f"🧹 Cleaning up expired anonymous user: {email} (created: {created_at}, last activity: {last_activity})")
+                    print(f" Cleaning up expired anonymous user: {email} (created: {created_at}, last activity: {last_activity})")
                     
                     try:
                         # Use a transaction-like approach with individual error handling
@@ -231,23 +231,23 @@ class AnonymousSession:
                         print(f"   Deleted user {user_id}")
                         
                         deleted_count += 1
-                        print(f"✅ Successfully cleaned up anonymous user: {email} (messages preserved)")
+                        print(f" Successfully cleaned up anonymous user: {email} (messages preserved)")
                         
                     except Exception as user_cleanup_error:
-                        print(f"❌ Error cleaning up user {user_id}: {user_cleanup_error}")
+                        print(f" Error cleaning up user {user_id}: {user_cleanup_error}")
                         continue
                 else:
                     if created_at >= cutoff_time:
-                        print(f"⏳ User {email} not yet eligible for cleanup (created: {created_at})")
+                        print(f" User {email} not yet eligible for cleanup (created: {created_at})")
                     elif last_activity >= cutoff_time:
-                        print(f"⏳ User {email} has recent activity (last activity: {last_activity})")
+                        print(f" User {email} has recent activity (last activity: {last_activity})")
                     else:
-                        print(f"⏳ User {email} not eligible for cleanup (created: {created_at}, last activity: {last_activity})")
+                        print(f" User {email} not eligible for cleanup (created: {created_at}, last activity: {last_activity})")
             
-            print(f"🧹 Database cleanup completed: {deleted_count} expired anonymous users removed")
+            print(f"Database cleanup completed: {deleted_count} expired anonymous users removed")
             
         except Exception as e:
-            print(f"❌ Error during database cleanup: {e}")
+            print(f"Error during database cleanup: {e}")
         finally:
             # Always release the lock
             CLEANUP_IN_PROGRESS = False
@@ -268,10 +268,10 @@ async def get_or_create_default_user() -> UUID:
         users = session_service.get_all_users()
         if users and len(users) > 0:
             user_id = users[0].user_id
-            print(f"✅ Using existing user: {user_id}")
+            print(f"Using existing user: {user_id}")
             return user_id
     except Exception as e:
-        print(f"⚠️ Could not fetch users: {e}")
+        print(f"Could not fetch users: {e}")
     
     # If no users exist, create a default one
     try:
@@ -280,10 +280,10 @@ async def get_or_create_default_user() -> UUID:
             "display_name": "Default User"
         }
         user = session_service.create_user(user_data)
-        print(f"✅ Created default user: {user.user_id}")
+        print(f"Created default user: {user.user_id}")
         return user.user_id
     except Exception as e:
-        print(f"❌ Failed to create default user: {e}")
+        print(f"Failed to create default user: {e}")
         raise HTTPException(status_code=500, detail="No users available and cannot create default user")
 
 def get_current_user_id(x_user_id: Optional[str] = Header(None), x_session_id: Optional[str] = Header(None)) -> tuple[Optional[UUID], Optional[str]]:
@@ -325,25 +325,25 @@ async def chat_with_session(
         if session_id is None:
             # Create new anonymous session
             session_id = AnonymousSession.create_session()
-            print(f"🆕 Created new anonymous session: {session_id}")
+            print(f" Created new anonymous session: {session_id}")
         else:
             # Check if existing anonymous session is valid
             session = AnonymousSession.get_session(session_id)
             if session is None:
                 # Session expired, create new one
                 session_id = AnonymousSession.create_session()
-                print(f"⏰ Session expired, created new anonymous session: {session_id}")
+                print(f" Session expired, created new anonymous session: {session_id}")
             else:
-                print(f"✅ Using existing anonymous session: {session_id}")
+                print(f" Using existing anonymous session: {session_id}")
     else:
-        print(f"✅ Using authenticated user: {user_id}")
+        print(f"Using authenticated user: {user_id}")
     
     text = chat_request.text
-    print(f"🔵 Received chat request: '{text[:100]}...'")
+    print(f" Received chat request: '{text[:100]}...'")
 
     async def generate_stream():
         try:
-            print(f"🟡 Starting response generation for: '{text[:50]}...'")
+            print(f"Starting response generation for: '{text[:50]}...'")
 
             # Handle session based on user type
             if user_id is not None:
@@ -356,7 +356,7 @@ async def chat_with_session(
                     session_id=chat_request.session_id,
                     title=session_title
                 )
-                print(f"📋 Using authenticated session: {session.session_id}")
+                print(f"Using authenticated session: {session.session_id}")
                 
                 # Get conversation history for context
                 conversation_history = session_service.get_session_context(
@@ -368,7 +368,7 @@ async def chat_with_session(
                 if not anonymous_session:
                     raise HTTPException(status_code=410, detail="Anonymous session expired. Please sign in to continue.")
                 
-                print(f"📋 Using anonymous session: {session_id}")
+                print(f"Using anonymous session: {session_id}")
                 
                 # Create temporary user for this anonymous session
                 try:
@@ -412,16 +412,16 @@ async def chat_with_session(
                 # Anonymous user - already in correct format
                 history_for_ai = conversation_history
             
-            print(f"📚 Conversation history length: {len(history_for_ai)} messages")
+            print(f" Conversation history length: {len(history_for_ai)} messages")
             if history_for_ai:
-                print(f"📚 Last few messages in history:")
+                print(f" Last few messages in history:")
                 for i, msg in enumerate(history_for_ai[-3:]):
                     print(f"  {i+1}. {msg['role']}: {msg['content'][:50]}...")
 
-            print(f"🚀 STARTING TURN CREATION PROCESS")
+            print(f"STARTING TURN CREATION PROCESS")
             # Create a turn ID for this user/assistant exchange before storing messages
             turn_id = uuid4()
-            print(f"🔄 Generated turn_id: {turn_id}")
+            print(f"Generated turn_id: {turn_id}")
 
             # Create turn record FIRST before storing messages
             try:
@@ -440,51 +440,51 @@ async def chat_with_session(
                 }
                 
                 supabase = get_supabase_client()
-                print(f"🔄 Creating turn record: {turn_record}")
-                print(f"🔄 User ID: {user_id}, Temp User ID: {temp_user_id}")
-                print(f"🔄 Session ID: {session.session_id}")
+                print(f"Creating turn record: {turn_record}")
+                print(f"User ID: {user_id}, Temp User ID: {temp_user_id}")
+                print(f"Session ID: {session.session_id}")
                 
                 turn_result = supabase.table("turns").insert([turn_record]).execute()
-                print(f"🔄 Turn insert result: {turn_result}")
+                print(f"Turn insert result: {turn_result}")
                 
                 if turn_result.data:
-                    print(f"✅ Created turn record: {turn_id}")
+                    print(f"SUCCESS: Created turn record: {turn_id}")
                 else:
-                    print(f"⚠️ Failed to create turn record: {turn_result}")
+                    print(f"WARNING: Failed to create turn record: {turn_result}")
                     if hasattr(turn_result, 'error') and turn_result.error:
-                        print(f"⚠️ Turn result error: {turn_result.error}")
+                        print(f"WARNING: Turn result error: {turn_result.error}")
                     else:
-                        print(f"⚠️ No error attribute in turn_result")
+                        print(f"WARNING: No error attribute in turn_result")
                     
                     # Try to create turn record without user_id if it's causing issues
                     if not user_id:
-                        print(f"🔄 Retrying turn creation without user_id...")
+                        print(f"Retrying turn creation without user_id...")
                         turn_record_no_user = {**turn_record}
                         turn_record_no_user["user_id"] = None
                         retry_result = supabase.table("turns").insert([turn_record_no_user]).execute()
-                        print(f"🔄 Retry result: {retry_result}")
+                        print(f"Retry result: {retry_result}")
                         if retry_result.data:
-                            print(f"✅ Created turn record without user_id: {turn_id}")
+                            print(f"SUCCESS: Created turn record without user_id: {turn_id}")
                         else:
                             raise Exception(f"Failed to create turn record even without user_id: {retry_result}")
                     else:
                         raise Exception(f"Failed to create turn record: {turn_result}")
             except Exception as turn_error:
-                print(f"❌ Failed to create turn record: {turn_error}")
+                print(f"ERROR: Failed to create turn record: {turn_error}")
                 raise Exception(f"Could not create turn record: {turn_error}")
 
             # Store user message based on user type
             if user_id is not None:
                 # Authenticated user - store in database
-                print(f"💾 Storing user message with turn_id: {turn_id}")
-                print(f"💾 About to create user message with session_id: {session.session_id}")
+                print(f"Storing user message with turn_id: {turn_id}")
+                print(f"About to create user message with session_id: {session.session_id}")
                 user_message = session_service.create_message(ChatMessageCreate(
                     session_id=session.session_id,
                     turn_id=turn_id,
                     role="user",
                     content=text
                 ))
-                print(f"✅ User message stored with turn_id: {turn_id}")
+                print(f" User message stored with turn_id: {turn_id}")
             else:
                 # Anonymous user - store in database (temp_user_id already created above)
                 try:
@@ -517,7 +517,7 @@ async def chat_with_session(
 
             # Check if AI is available
             if not AI_AVAILABLE or ai_manager is None or TaskType is None:
-                print("⚠️ AI not available, using fallback response")
+                print("AI not available, using fallback response")
                 reply = f"I received your message: '{text}'. I'm currently having trouble connecting to my AI backend, but I'm here to help with your story development! What kind of story are you working on?"
                 model_used = "fallback"
                 tokens_used = 0
@@ -531,19 +531,19 @@ async def chat_with_session(
                     temperature=0.7
                 )
 
-                print(f"🟢 AI Response received: {ai_response}")
+                print(f" AI Response received: {ai_response}")
 
                 reply = ai_response.get("response", "Sorry, I couldn't generate a response.")
                 model_used = ai_response.get("model_used", "unknown")
                 tokens_used = ai_response.get("tokens_used", 0)
 
-            print(f"📝 Reply content: '{reply[:100]}...'")
-            print(f"🤖 Model used: {model_used}")
-            print(f"🔢 Tokens used: {tokens_used}")
+            print(f" Reply content: '{reply[:100]}...'")
+            print(f" Model used: {model_used}")
+            print(f" Tokens used: {tokens_used}")
 
             # Stream the response word by word
             words = reply.split()
-            print(f"📊 Streaming {len(words)} words")
+            print(f" Streaming {len(words)} words")
 
             for i, word in enumerate(words):
                 chunk = {
@@ -552,14 +552,14 @@ async def chat_with_session(
                     "done": i == len(words) - 1
                 }
                 chunk_data = f"data: {json.dumps(chunk)}\n\n"
-                print(f"📤 Sending chunk {i+1}/{len(words)}: '{word}'")
+                print(f" Sending chunk {i+1}/{len(words)}: '{word}'")
                 yield chunk_data
                 await asyncio.sleep(0.05)  # Slightly faster for better UX
 
             # Store assistant message based on user type
             if user_id is not None:
                 # Authenticated user - store in database
-                print(f"💾 Storing assistant message with turn_id: {turn_id}")
+                print(f" Storing assistant message with turn_id: {turn_id}")
                 assistant_message = session_service.create_message(ChatMessageCreate(
                     session_id=session.session_id,
                     turn_id=turn_id,
@@ -570,7 +570,7 @@ async def chat_with_session(
                         "tokens_used": tokens_used
                     }
                 ))
-                print(f"✅ Assistant message stored with turn_id: {turn_id}")
+                print(f" Assistant message stored with turn_id: {turn_id}")
             else:
                 # Anonymous user - store in database AND memory
                 try:
@@ -584,9 +584,9 @@ async def chat_with_session(
                             "tokens_used": tokens_used
                         }
                     ))
-                    print(f"✅ Stored assistant message in database for anonymous session")
+                    print(f" Stored assistant message in database for anonymous session")
                 except Exception as db_error:
-                    print(f"⚠️ Failed to store assistant message in database: {db_error}")
+                    print(f" Failed to store assistant message in database: {db_error}")
                     # Continue with in-memory storage only
                 
                 # Also store in memory for immediate access
@@ -611,30 +611,30 @@ async def chat_with_session(
                         "timestamp": datetime.now().isoformat()
                     }
                 }
-                print(f"🔄 Updating turn record with AI response: {turn_id}")
+                print(f" Updating turn record with AI response: {turn_id}")
                 update_result = supabase.table("turns").update(update_data).eq("turn_id", str(turn_id)).execute()
                 if update_result.data:
-                    print(f"✅ Updated turn record with AI response: {turn_id}")
+                    print(f" Updated turn record with AI response: {turn_id}")
                 else:
-                    print(f"⚠️ Failed to update turn record: {update_result}")
+                    print(f" Failed to update turn record: {update_result}")
             except Exception as update_error:
-                print(f"⚠️ Failed to update turn record (non-critical): {update_error}")
+                print(f" Failed to update turn record (non-critical): {update_error}")
 
             # Update dossier if needed (existing logic)
             if AI_AVAILABLE and dossier_extractor is not None:
                 try:
                     should_update = await dossier_extractor.should_update_dossier(history_for_ai)
-                    print(f"🔍 Should update dossier: {should_update}")
+                    print(f" Should update dossier: {should_update}")
                     if should_update:
-                        print("📊 Updating dossier using AI extractor...")
+                        print(" Updating dossier using AI extractor...")
                         dossier_data = await dossier_extractor.extract_metadata(history_for_ai)
-                        print(f"📊 Dossier data extracted: {dossier_data}")
+                        print(f" Dossier data extracted: {dossier_data}")
                         
                         # Update dossier in database
                         # This would need to be implemented in the session service
                         # For now, we'll keep the existing Supabase logic
                 except Exception as dossier_error:
-                    print(f"⚠️ Dossier update error: {dossier_error}")
+                    print(f" Dossier update error: {dossier_error}")
 
             # Send metadata chunk
             if user_id is not None:
@@ -666,10 +666,10 @@ async def chat_with_session(
             yield f"data: {json.dumps(metadata_chunk)}\n\n"
 
         except Exception as e:
-            print(f"❌ Chat API error: {str(e)}")
-            print(f"❌ Error type: {type(e).__name__}")
+            print(f" Chat API error: {str(e)}")
+            print(f" Error type: {type(e).__name__}")
             import traceback
-            print(f"❌ Full traceback: {traceback.format_exc()}")
+            print(f" Full traceback: {traceback.format_exc()}")
             error_reply = f"I apologize, but I'm having trouble generating a response right now. Please try again later. Error: {str(e)}"
 
             # Stream error message
@@ -707,7 +707,7 @@ async def get_user_sessions(
         sessions = session_service.get_user_sessions(user_id, limit)
         return sessions
     except Exception as e:
-        print(f"❌ Error fetching sessions: {e}")
+        print(f" Error fetching sessions: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch sessions")
 
 
@@ -735,7 +735,7 @@ async def get_session_messages(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error fetching messages: {e}")
+        print(f" Error fetching messages: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch messages")
 
 
@@ -754,7 +754,7 @@ async def update_session_title(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error updating session title: {e}")
+        print(f" Error updating session title: {e}")
         raise HTTPException(status_code=500, detail="Failed to update session title")
 
 
@@ -765,21 +765,21 @@ async def delete_session(
 ):
     """Delete (deactivate) a session"""
     try:
-        print(f"🗑️ Attempting to delete session {session_id} for user {user_id}")
+        print(f" Attempting to delete session {session_id} for user {user_id}")
         success = session_service.deactivate_session(session_id, user_id)
-        print(f"🗑️ Deactivate session result: {success}")
+        print(f" Deactivate session result: {success}")
         if not success:
-            print(f"❌ Session {session_id} not found for user {user_id}")
+            print(f" Session {session_id} not found for user {user_id}")
             raise HTTPException(status_code=404, detail="Session not found")
-        print(f"✅ Session {session_id} deleted successfully")
+        print(f" Session {session_id} deleted successfully")
         return {"message": "Session deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error deleting session {session_id}: {e}")
-        print(f"❌ Error type: {type(e)}")
+        print(f" Error deleting session {session_id}: {e}")
+        print(f" Error type: {type(e)}")
         import traceback
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f" Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to delete session")
 
 
@@ -799,7 +799,7 @@ async def create_user(user_data: UserCreate):
             user = session_service.create_user(user_data)
         return {"message": "User created successfully", "user": user}
     except Exception as e:
-        print(f"❌ Error creating user: {e}")
+        print(f" Error creating user: {e}")
         raise HTTPException(status_code=500, detail="Failed to create user")
 
 
@@ -816,7 +816,7 @@ async def get_current_user(user_id: Optional[UUID] = Depends(get_user_id_only)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error fetching user: {e}")
+        print(f"Error fetching user: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user")
 
 
@@ -840,7 +840,7 @@ async def create_anonymous_session():
             "message": "Anonymous session created. Sign in to save your chats permanently."
         }
     except Exception as e:
-        print(f"❌ Error creating anonymous session: {e}")
+        print(f" Error creating anonymous session: {e}")
         raise HTTPException(status_code=500, detail="Failed to create anonymous session")
 
 @router.post("/cleanup-expired-sessions")
@@ -878,7 +878,7 @@ async def get_anonymous_session(session_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error getting anonymous session: {e}")
+        print(f" Error getting anonymous session: {e}")
         raise HTTPException(status_code=500, detail="Failed to get anonymous session")
 
 @router.post("/migrate-anonymous-session")
@@ -894,7 +894,7 @@ async def migrate_anonymous_session(
     
     # Prevent cleanup during migration
     if CLEANUP_IN_PROGRESS:
-        print("⚠️ Migration blocked: cleanup in progress")
+        print(" Migration blocked: cleanup in progress")
         raise HTTPException(status_code=409, detail="System maintenance in progress. Please try again in a moment.")
     
     try:
@@ -933,5 +933,5 @@ async def migrate_anonymous_session(
         return {"message": "Anonymous session data migrated successfully"}
         
     except Exception as e:
-        print(f"❌ Error migrating anonymous session: {e}")
+        print(f" Error migrating anonymous session: {e}")
         raise HTTPException(status_code=500, detail="Failed to migrate anonymous session data")

@@ -19,30 +19,30 @@ chat = None
 
 try:
     from app.api import transcribe
-    print("✅ Transcribe router imported")
+    print("SUCCESS: Transcribe router imported")
 except Exception as e:
-    print(f"❌ Error importing transcribe router: {e}")
+    print(f"ERROR: Error importing transcribe router: {e}")
     transcribe = None
 
 try:
     from app.api import chat_sessions
-    print("✅ Chat sessions router imported")
+    print("SUCCESS: Chat sessions router imported")
 except Exception as e:
-    print(f"❌ Error importing chat_sessions router: {e}")
+    print(f"ERROR: Error importing chat_sessions router: {e}")
     chat_sessions = None
 
 try:
     from app.api import auth
-    print("✅ Auth router imported")
+    print("SUCCESS: Auth router imported")
 except Exception as e:
-    print(f"❌ Error importing auth router: {e}")
+    print(f"ERROR: Error importing auth router: {e}")
     auth = None
 
 try:
     from app.api import dossier
-    print("✅ Dossier router imported")
+    print("SUCCESS: Dossier router imported")
 except Exception as e:
-    print(f"❌ Error importing dossier router: {e}")
+    print(f"ERROR: Error importing dossier router: {e}")
     dossier = None
 
 # Initialize FastAPI app
@@ -65,30 +65,30 @@ app.add_middleware(
 if chat_sessions:
     try:
         app.include_router(chat_sessions.router, prefix="/api/v1", tags=["chat-sessions"])
-        print("✅ Chat sessions router included")
+        print("SUCCESS: Chat sessions router included")
     except Exception as e:
-        print(f"❌ Error including chat sessions router: {e}")
+        print(f"ERROR: Error including chat sessions router: {e}")
 
 if auth:
     try:
         app.include_router(auth.router, prefix="/api/v1/auth", tags=["authentication"])
-        print("✅ Auth router included")
+        print("SUCCESS: Auth router included")
     except Exception as e:
-        print(f"❌ Error including auth router: {e}")
+        print(f"ERROR: Error including auth router: {e}")
 
 if transcribe:
     try:
         app.include_router(transcribe.router)
-        print("✅ Transcribe router included")
+        print("SUCCESS: Transcribe router included")
     except Exception as e:
-        print(f"❌ Error including transcribe router: {e}")
+        print(f"ERROR: Error including transcribe router: {e}")
 
 if dossier:
     try:
         app.include_router(dossier.router, prefix="/api/v1", tags=["dossier"])
-        print("✅ Dossier router included")
+        print("SUCCESS: Dossier router included")
     except Exception as e:
-        print(f"❌ Error including dossier router: {e}")
+        print(f"ERROR: Error including dossier router: {e}")
 
 # Add root route to handle 404 errors
 @app.get("/")
@@ -159,14 +159,14 @@ async def startup():
                     # Database cleanup (anonymize/delete)
                     await AnonymousSession.cleanup_expired_anonymous_users()
                 except Exception as cleanup_error:
-                    print(f"⚠️ Periodic cleanup error: {cleanup_error}")
+                    print(f"WARNING: Periodic cleanup error: {cleanup_error}")
                 # Run every 15 minutes
                 await asyncio.sleep(900)
 
         asyncio.create_task(periodic_cleanup())
         print("🧹 Started periodic anonymous cleanup task")
     except Exception as schedule_error:
-        print(f"⚠️ Failed to start cleanup scheduler: {schedule_error}")
+        print(f"WARNING: Failed to start cleanup scheduler: {schedule_error}")
 
 @app.on_event("shutdown")
 async def shutdown():
