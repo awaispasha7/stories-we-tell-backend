@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+import asyncio
 
 # Import routes with error handling
 ROUTES_AVAILABLE = True
@@ -13,12 +14,8 @@ chat_sessions = None
 auth = None
 dossier = None
 
-try:
-    from app.api import chat
-    print("✅ Chat router imported")
-except Exception as e:
-    print(f"❌ Error importing chat router: {e}")
-    chat = None
+# Old chat router removed - using new session-aware chat_sessions router instead
+chat = None
 
 try:
     from app.api import transcribe
@@ -63,12 +60,7 @@ app.add_middleware(
 )
 
 # Include routes with individual error handling
-if chat:
-    try:
-        app.include_router(chat.router)
-        print("✅ Chat router included")
-    except Exception as e:
-        print(f"❌ Error including chat router: {e}")
+# Old chat router removed - using new session-aware chat_sessions router instead
 
 if chat_sessions:
     try:
@@ -111,9 +103,8 @@ async def health_check():
         "message": "Backend is running",
         "cors_enabled": True,
         "allowed_origins": ["*"],  # All origins allowed
-        "endpoints": ["/chat", "/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/dossiers"],
+        "endpoints": ["/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/dossiers"],
         "routes_available": {
-            "chat": chat is not None,
             "chat_sessions": chat_sessions is not None,
             "auth": auth is not None,
             "transcribe": transcribe is not None,
@@ -155,6 +146,27 @@ async def startup():
     print("Starting up FastAPI application...")
     print("CORS middleware configured")
     print("Application ready to serve requests")
+
+    # Start periodic cleanup of expired anonymous sessions/users
+    try:
+        from app.api.chat_sessions import AnonymousSession
+
+        async def periodic_cleanup():
+            while True:
+                try:
+                    # Lightweight session cleanup (in-memory)
+                    AnonymousSession.cleanup_expired_sessions()
+                    # Database cleanup (anonymize/delete)
+                    await AnonymousSession.cleanup_expired_anonymous_users()
+                except Exception as cleanup_error:
+                    print(f"⚠️ Periodic cleanup error: {cleanup_error}")
+                # Run every 15 minutes
+                await asyncio.sleep(900)
+
+        asyncio.create_task(periodic_cleanup())
+        print("🧹 Started periodic anonymous cleanup task")
+    except Exception as schedule_error:
+        print(f"⚠️ Failed to start cleanup scheduler: {schedule_error}")
 
 @app.on_event("shutdown")
 async def shutdown():

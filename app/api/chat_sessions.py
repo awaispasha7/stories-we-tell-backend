@@ -418,11 +418,15 @@ async def chat_with_session(
                 for i, msg in enumerate(history_for_ai[-3:]):
                     print(f"  {i+1}. {msg['role']}: {msg['content'][:50]}...")
 
+            # Create a turn ID for this user/assistant exchange before storing messages
+            turn_id = uuid4()
+
             # Store user message based on user type
             if user_id is not None:
                 # Authenticated user - store in database
                 user_message = session_service.create_message(ChatMessageCreate(
                     session_id=session.session_id,
+                    turn_id=turn_id,
                     role="user",
                     content=text
                 ))
@@ -433,6 +437,7 @@ async def chat_with_session(
                     print(f"[DEBUG] Session object before message storage: type={type(session)}, session_id={getattr(session, 'session_id', 'NO_ATTR')}")
                     user_message = session_service.create_message(ChatMessageCreate(
                         session_id=session.session_id,
+                        turn_id=turn_id,
                         role="user",
                         content=text
                     ))
@@ -501,6 +506,7 @@ async def chat_with_session(
                 # Authenticated user - store in database
                 assistant_message = session_service.create_message(ChatMessageCreate(
                     session_id=session.session_id,
+                    turn_id=turn_id,
                     role="assistant",
                     content=reply,
                     metadata={
@@ -513,6 +519,7 @@ async def chat_with_session(
                 try:
                     assistant_message = session_service.create_message(ChatMessageCreate(
                         session_id=session.session_id,
+                        turn_id=turn_id,
                         role="assistant",
                         content=reply,
                         metadata={
@@ -536,9 +543,8 @@ async def chat_with_session(
                     }
                 })
 
-            # Create turn record for both user types
+            # Create turn record for both user types (reuse the same turn_id)
             try:
-                turn_id = uuid4()
                 turn_record = {
                     "turn_id": str(turn_id),
                     "user_id": str(user_id) if user_id else str(temp_user_id),

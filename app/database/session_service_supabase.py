@@ -570,13 +570,38 @@ class SessionService:
             if session:
                 return session
         
-        # Create new session
-        session_data = SessionCreate(
-            user_id=user_id,
-            project_id=project_id,
-            title=title or f"Chat Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        )
-        return self.create_session(session_data)
+        # Create new session - use provided session_id if available, otherwise generate new one
+        if session_id:
+            # Use the provided session_id
+            supabase = self.get_supabase()
+            
+            # First, ensure the project/dossier exists
+            self.ensure_project_exists(project_id, user_id)
+            
+            # Then, ensure user owns the project
+            self.associate_user_project(user_id, project_id)
+            
+            session_record = {
+                "session_id": str(session_id),
+                "user_id": str(user_id),
+                "project_id": str(project_id),
+                "title": title or f"Chat Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            }
+            
+            result = supabase.table("sessions").insert(session_record).execute()
+            
+            if result.data:
+                return Session(**result.data[0])
+            else:
+                raise Exception("Failed to create session with provided ID")
+        else:
+            # Create new session with generated ID
+            session_data = SessionCreate(
+                user_id=user_id,
+                project_id=project_id,
+                title=title or f"Chat Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            )
+            return self.create_session(session_data)
     
     def get_session_context(
         self, 
