@@ -418,6 +418,7 @@ async def chat_with_session(
                 for i, msg in enumerate(history_for_ai[-3:]):
                     print(f"  {i+1}. {msg['role']}: {msg['content'][:50]}...")
 
+            print(f"🚀 STARTING TURN CREATION PROCESS")
             # Create a turn ID for this user/assistant exchange before storing messages
             turn_id = uuid4()
             print(f"🔄 Generated turn_id: {turn_id}")
@@ -440,14 +441,34 @@ async def chat_with_session(
                 
                 supabase = get_supabase_client()
                 print(f"🔄 Creating turn record: {turn_record}")
+                print(f"🔄 User ID: {user_id}, Temp User ID: {temp_user_id}")
+                print(f"🔄 Session ID: {session.session_id}")
+                
                 turn_result = supabase.table("turns").insert([turn_record]).execute()
                 print(f"🔄 Turn insert result: {turn_result}")
+                
                 if turn_result.data:
                     print(f"✅ Created turn record: {turn_id}")
                 else:
                     print(f"⚠️ Failed to create turn record: {turn_result}")
-                    print(f"⚠️ Turn result error: {turn_result.error if hasattr(turn_result, 'error') else 'No error attribute'}")
-                    raise Exception(f"Failed to create turn record: {turn_result}")
+                    if hasattr(turn_result, 'error') and turn_result.error:
+                        print(f"⚠️ Turn result error: {turn_result.error}")
+                    else:
+                        print(f"⚠️ No error attribute in turn_result")
+                    
+                    # Try to create turn record without user_id if it's causing issues
+                    if not user_id:
+                        print(f"🔄 Retrying turn creation without user_id...")
+                        turn_record_no_user = {**turn_record}
+                        turn_record_no_user["user_id"] = None
+                        retry_result = supabase.table("turns").insert([turn_record_no_user]).execute()
+                        print(f"🔄 Retry result: {retry_result}")
+                        if retry_result.data:
+                            print(f"✅ Created turn record without user_id: {turn_id}")
+                        else:
+                            raise Exception(f"Failed to create turn record even without user_id: {retry_result}")
+                    else:
+                        raise Exception(f"Failed to create turn record: {turn_result}")
             except Exception as turn_error:
                 print(f"❌ Failed to create turn record: {turn_error}")
                 raise Exception(f"Could not create turn record: {turn_error}")
@@ -456,6 +477,7 @@ async def chat_with_session(
             if user_id is not None:
                 # Authenticated user - store in database
                 print(f"💾 Storing user message with turn_id: {turn_id}")
+                print(f"💾 About to create user message with session_id: {session.session_id}")
                 user_message = session_service.create_message(ChatMessageCreate(
                     session_id=session.session_id,
                     turn_id=turn_id,
