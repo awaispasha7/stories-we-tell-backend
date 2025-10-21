@@ -345,6 +345,9 @@ async def chat_with_session(
         try:
             print(f"Starting response generation for: '{text[:50]}...'")
 
+            # Initialize temp_user_id to None for authenticated users
+            temp_user_id = None
+            
             # Handle session based on user type
             if user_id is not None:
                 # Authenticated user - use database session
