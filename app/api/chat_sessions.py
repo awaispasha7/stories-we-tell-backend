@@ -359,6 +359,8 @@ async def chat_with_session(
     print(f" Request session_id: {chat_request.session_id}")
     print(f" Header session_id: {session_id}")
     print(f" User ID: {user_id}")
+    print(f" Request timestamp: {datetime.now().isoformat()}")
+    print(f" Message type: {'AUDIO' if 'Audio transcription' in text or 'Error transcribing' in text else 'TEXT'}")
 
     async def generate_stream():
         try:
