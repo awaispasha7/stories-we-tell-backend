@@ -206,6 +206,16 @@ class EmbeddingService:
             return None
 
 
-# Global singleton instance
-embedding_service = EmbeddingService()
+# Global singleton instance (lazy initialization)
+_embedding_service_instance = None
+
+def get_embedding_service():
+    """Get or create the embedding service singleton"""
+    global _embedding_service_instance
+    if _embedding_service_instance is None:
+        _embedding_service_instance = EmbeddingService()
+    return _embedding_service_instance
+
+# For backward compatibility
+embedding_service = None  # Will be initialized on first access
 

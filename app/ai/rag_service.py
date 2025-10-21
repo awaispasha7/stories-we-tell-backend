@@ -5,7 +5,7 @@ Combines embedding generation, vector search, and context building for LLM promp
 
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from .embedding_service import embedding_service
+from .embedding_service import get_embedding_service
 from .vector_storage import vector_storage
 
 
@@ -13,7 +13,7 @@ class RAGService:
     """Service for RAG-enhanced chat responses"""
     
     def __init__(self):
-        self.embedding_service = embedding_service
+        self.embedding_service = None  # Lazy initialization
         self.vector_storage = vector_storage
         
         # Configuration for retrieval
@@ -22,6 +22,12 @@ class RAGService:
         self.user_match_count = 8  # Retrieve top 8 similar user messages
         self.global_match_count = 3  # Retrieve top 3 global patterns
         self.similarity_threshold = 0.6  # Minimum similarity score
+    
+    def _get_embedding_service(self):
+        """Lazy initialization of embedding service"""
+        if self.embedding_service is None:
+            self.embedding_service = get_embedding_service()
+        return self.embedding_service
     
     async def get_rag_context(
         self,
@@ -60,7 +66,7 @@ class RAGService:
             else:
                 query_text = user_message
             
-            query_embedding = await self.embedding_service.generate_query_embedding(query_text)
+            query_embedding = await self._get_embedding_service().generate_query_embedding(query_text)
             
             # Step 2: Retrieve user-specific context
             user_context = await self.vector_storage.get_similar_user_messages(
@@ -180,7 +186,7 @@ class RAGService:
         """
         try:
             # Generate embedding
-            embedding = await self.embedding_service.generate_embedding(content)
+            embedding = await self._get_embedding_service().generate_embedding(content)
             
             # Store embedding
             embedding_id = await self.vector_storage.store_message_embedding(
@@ -224,7 +230,7 @@ class RAGService:
             # Example: Extract character development patterns
             character_mentions = self._extract_character_patterns(conversation)
             for char_pattern in character_mentions:
-                embedding = await self.embedding_service.generate_embedding(char_pattern['text'])
+                embedding = await self._get_embedding_service().generate_embedding(char_pattern['text'])
                 await self.vector_storage.store_global_knowledge(
                     category='character',
                     pattern_type='character_development',
@@ -238,7 +244,7 @@ class RAGService:
             # Example: Extract plot patterns
             plot_patterns = self._extract_plot_patterns(conversation)
             for plot_pattern in plot_patterns:
-                embedding = await self.embedding_service.generate_embedding(plot_pattern['text'])
+                embedding = await self._get_embedding_service().generate_embedding(plot_pattern['text'])
                 await self.vector_storage.store_global_knowledge(
                     category='plot',
                     pattern_type='story_arc',

@@ -32,6 +32,16 @@ except Exception as e:
     TaskType = None
     dossier_extractor = None
 
+# Try to import RAG components
+try:
+    from ..ai.rag_service import rag_service
+    RAG_AVAILABLE = True
+    print(" RAG components imported successfully")
+except Exception as e:
+    print(f"Warning: RAG components not available: {e}")
+    RAG_AVAILABLE = False
+    rag_service = None
+
 router = APIRouter()
 
 # Anonymous session management
@@ -322,24 +332,33 @@ async def chat_with_session(
     
     # Handle anonymous sessions
     if user_id is None:
-        if session_id is None:
+        # Prioritize session_id from request body over header
+        effective_session_id = chat_request.session_id or session_id
+        
+        if effective_session_id is None:
             # Create new anonymous session
-            session_id = AnonymousSession.create_session()
-            print(f" Created new anonymous session: {session_id}")
+            effective_session_id = AnonymousSession.create_session()
+            print(f" Created new anonymous session: {effective_session_id}")
         else:
             # Check if existing anonymous session is valid
-            session = AnonymousSession.get_session(session_id)
+            session = AnonymousSession.get_session(effective_session_id)
             if session is None:
                 # Session expired, create new one
-                session_id = AnonymousSession.create_session()
-                print(f" Session expired, created new anonymous session: {session_id}")
+                effective_session_id = AnonymousSession.create_session()
+                print(f" Session expired, created new anonymous session: {effective_session_id}")
             else:
-                print(f" Using existing anonymous session: {session_id}")
+                print(f" Using existing anonymous session: {effective_session_id}")
+        
+        # Update session_id to use the effective session ID
+        session_id = effective_session_id
     else:
         print(f"Using authenticated user: {user_id}")
     
     text = chat_request.text
     print(f" Received chat request: '{text[:100]}...'")
+    print(f" Request session_id: {chat_request.session_id}")
+    print(f" Header session_id: {session_id}")
+    print(f" User ID: {user_id}")
 
     async def generate_stream():
         try:
@@ -518,6 +537,46 @@ async def chat_with_session(
                 ]
                 history_for_ai = conversation_history
 
+            # ============================================================================
+            # RAG: Retrieve relevant context before AI generation
+            # ============================================================================
+            if RAG_AVAILABLE and rag_service and user_id:
+                try:
+                    print(" RAG: Retrieving relevant context...")
+                    rag_context = await rag_service.get_rag_context(
+                        user_message=text,
+                        user_id=user_id,
+                        project_id=session.project_id if hasattr(session, 'project_id') else None,
+                        conversation_history=history_for_ai[-5:] if history_for_ai else None  # Last 5 messages
+                    )
+                    
+                    if rag_context and rag_context.get('combined_context_text'):
+                        # Inject RAG context as a system message
+                        system_message = {
+                            "role": "system",
+                            "content": f"""You are a creative storytelling assistant helping users develop their stories.
+
+{rag_context['combined_context_text']}
+
+Use the context above to provide personalized, contextually-aware responses that build upon the user's previous conversations and established storytelling patterns."""
+                        }
+                        
+                        # Insert system message at the beginning
+                        history_for_ai.insert(0, system_message)
+                        
+                        print(f" RAG: Injected context - {rag_context['metadata']['user_context_count']} user contexts, {rag_context['metadata']['global_context_count']} global patterns")
+                    else:
+                        print(" RAG: No relevant context found (user may be new or no similar conversations)")
+                        
+                except Exception as rag_error:
+                    print(f" RAG: Failed to retrieve context (continuing without RAG): {rag_error}")
+                    # Continue without RAG if it fails
+            else:
+                if not RAG_AVAILABLE:
+                    print(" RAG: Not available (RAG components not imported)")
+                elif not user_id:
+                    print(" RAG: Skipped for anonymous users")
+
             # Check if AI is available
             if not AI_AVAILABLE or ai_manager is None or TaskType is None:
                 print("AI not available, using fallback response")
@@ -574,6 +633,7 @@ async def chat_with_session(
                     }
                 ))
                 print(f" Assistant message stored with turn_id: {turn_id}")
+                # Note: Message embedding is automatically queued by database trigger
             else:
                 # Anonymous user - store in database AND memory
                 try:
