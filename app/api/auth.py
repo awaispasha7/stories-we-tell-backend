@@ -12,7 +12,7 @@ import secrets
 from datetime import datetime, timedelta
 import os
 
-from ..database.session_service_supabase import SessionServiceSupabase
+from ..database.session_service_supabase import SessionService
 from ..models import User, UserCreate
 
 router = APIRouter()
@@ -93,7 +93,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         )
     
     # Get user from database
-    session_service = SessionServiceSupabase()
+    session_service = SessionService()
     user = await session_service.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(
@@ -107,7 +107,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest):
     """Authenticate user with email and password"""
-    session_service = SessionServiceSupabase()
+    session_service = SessionService()
     
     # Get user by email
     user = await session_service.get_user_by_email(request.email)
@@ -140,7 +140,7 @@ async def login(request: LoginRequest):
 @router.post("/signup", response_model=TokenResponse)
 async def signup(request: SignupRequest):
     """Register a new user with email and password"""
-    session_service = SessionServiceSupabase()
+    session_service = SessionService()
     
     # Check if user already exists
     existing_user = await session_service.get_user_by_email(request.email)
@@ -182,7 +182,7 @@ async def google_auth(request: GoogleAuthRequest):
     # 2. Extract user information from the token
     # 3. Create or find the user in your database
     
-    session_service = SessionServiceSupabase()
+    session_service = SessionService()
     
     # Check if user exists
     user = await session_service.get_user_by_email(request.email)

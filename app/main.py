@@ -10,12 +10,11 @@ AUTH_AVAILABLE = True
 # Import individual routes with error handling
 chat = None
 transcribe = None
-chat_sessions = None
 auth = None
 dossier = None
+upload = None
 
-# Old chat router removed - using new session-aware chat_sessions router instead
-chat = None
+# Old chat router removed - using new simplified system
 
 try:
     from app.api import transcribe
@@ -24,12 +23,28 @@ except Exception as e:
     print(f"ERROR: Error importing transcribe router: {e}")
     transcribe = None
 
+# Using simplified session and chat system
+
 try:
-    from app.api import chat_sessions
-    print("SUCCESS: Chat sessions router imported")
+    from app.api import simple_session_manager
+    print("SUCCESS: Simple session manager imported")
 except Exception as e:
-    print(f"ERROR: Error importing chat_sessions router: {e}")
-    chat_sessions = None
+    print(f"ERROR: Error importing simple_session_manager: {e}")
+    simple_session_manager = None
+
+try:
+    from app.api import simple_chat
+    print("SUCCESS: Simple chat imported")
+except Exception as e:
+    print(f"ERROR: Error importing simple_chat: {e}")
+    simple_chat = None
+
+try:
+    from app.api import simple_users
+    print("SUCCESS: Simple users imported")
+except Exception as e:
+    print(f"ERROR: Error importing simple_users: {e}")
+    simple_users = None
 
 try:
     from app.api import auth
@@ -44,6 +59,13 @@ try:
 except Exception as e:
     print(f"ERROR: Error importing dossier router: {e}")
     dossier = None
+
+try:
+    from app.api import upload
+    print("SUCCESS: Upload router imported")
+except Exception as e:
+    print(f"ERROR: Error importing upload router: {e}")
+    upload = None
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -60,14 +82,7 @@ app.add_middleware(
 )
 
 # Include routes with individual error handling
-# Old chat router removed - using new session-aware chat_sessions router instead
-
-if chat_sessions:
-    try:
-        app.include_router(chat_sessions.router, prefix="/api/v1", tags=["chat-sessions"])
-        print("SUCCESS: Chat sessions router included")
-    except Exception as e:
-        print(f"ERROR: Error including chat sessions router: {e}")
+# Using new simplified session and chat system
 
 if auth:
     try:
@@ -90,6 +105,35 @@ if dossier:
     except Exception as e:
         print(f"ERROR: Error including dossier router: {e}")
 
+if upload:
+    try:
+        app.include_router(upload.router, prefix="/api/v1", tags=["upload"])
+        print("SUCCESS: Upload router included")
+    except Exception as e:
+        print(f"ERROR: Error including upload router: {e}")
+
+# Include new simplified routers
+if simple_session_manager:
+    try:
+        app.include_router(simple_session_manager.router, prefix="/api/v1", tags=["session"])
+        print("SUCCESS: Simple session manager router included")
+    except Exception as e:
+        print(f"ERROR: Error including simple session manager router: {e}")
+
+if simple_chat:
+    try:
+        app.include_router(simple_chat.router, prefix="/api/v1", tags=["chat"])
+        print("SUCCESS: Simple chat router included")
+    except Exception as e:
+        print(f"ERROR: Error including simple chat router: {e}")
+
+if simple_users:
+    try:
+        app.include_router(simple_users.router, prefix="/api/v1", tags=["users"])
+        print("SUCCESS: Simple users router included")
+    except Exception as e:
+        print(f"ERROR: Error including simple users router: {e}")
+
 # Add root route to handle 404 errors
 @app.get("/")
 async def root():
@@ -103,12 +147,17 @@ async def health_check():
         "message": "Backend is running",
         "cors_enabled": True,
         "allowed_origins": ["*"],  # All origins allowed
-        "endpoints": ["/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/dossiers"],
+        "endpoints": ["/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/dossiers", "/api/v1/admin/extract-knowledge"],
         "routes_available": {
-            "chat_sessions": chat_sessions is not None,
+            "chat_sessions": False,  # Using simplified system
             "auth": auth is not None,
             "transcribe": transcribe is not None,
-            "dossier": dossier is not None
+            "dossier": dossier is not None,
+            "upload": upload is not None
+        },
+        "background_workers": {
+            "periodic_cleanup": True,
+            "knowledge_extraction": True
         }
     }
 
@@ -116,6 +165,28 @@ async def health_check():
 @app.get("/test")
 async def test_endpoint():
     return {"message": "Test endpoint working", "status": "ok"}
+
+# Add manual knowledge extraction trigger endpoint
+@app.post("/api/v1/admin/extract-knowledge")
+async def trigger_knowledge_extraction():
+    """Manually trigger knowledge extraction (admin endpoint)"""
+    try:
+        from app.workers.knowledge_extractor import knowledge_extractor
+        
+        # Run knowledge extraction
+        await knowledge_extractor.extract_knowledge_from_conversations(limit=10)
+        
+        return {
+            "success": True,
+            "message": "Knowledge extraction completed successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Knowledge extraction failed: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        }
 
 
 # CORS is handled by the middleware above
@@ -149,24 +220,44 @@ async def startup():
 
     # Start periodic cleanup of expired anonymous sessions/users
     try:
-        from app.api.chat_sessions import AnonymousSession
+        from app.api.simple_session_manager import SimpleSessionManager
 
         async def periodic_cleanup():
             while True:
                 try:
-                    # Lightweight session cleanup (in-memory)
-                    AnonymousSession.cleanup_expired_sessions()
-                    # Database cleanup (anonymize/delete)
-                    await AnonymousSession.cleanup_expired_anonymous_users()
+                    # Database cleanup (anonymize/delete) - run every 30 minutes
+                    await SimpleSessionManager.cleanup_expired_anonymous_sessions()
                 except Exception as cleanup_error:
-                    print(f"WARNING: Periodic cleanup error: {cleanup_error}")
-                # Run every 15 minutes
-                await asyncio.sleep(900)
+                    print(f"WARNING: Cleanup error: {cleanup_error}")
+                
+                # Run cleanup every 30 minutes
+                await asyncio.sleep(1800)
 
         asyncio.create_task(periodic_cleanup())
-        print("🧹 Started periodic anonymous cleanup task")
+        print("SUCCESS: Started periodic anonymous cleanup task")
     except Exception as schedule_error:
         print(f"WARNING: Failed to start cleanup scheduler: {schedule_error}")
+
+    # Start knowledge extraction worker
+    try:
+        from app.workers.knowledge_extractor import knowledge_extractor
+
+        async def knowledge_extraction_worker():
+            while True:
+                try:
+                    # Run knowledge extraction every 2 hours
+                    await knowledge_extractor.extract_knowledge_from_conversations(limit=5)
+                    print("SUCCESS: Knowledge extraction completed")
+                except Exception as extraction_error:
+                    print(f"WARNING: Knowledge extraction error: {extraction_error}")
+                
+                # Run every 2 hours (7200 seconds)
+                await asyncio.sleep(7200)
+
+        asyncio.create_task(knowledge_extraction_worker())
+        print("SUCCESS: Started knowledge extraction worker")
+    except Exception as worker_error:
+        print(f"WARNING: Failed to start knowledge extraction worker: {worker_error}")
 
 @app.on_event("shutdown")
 async def shutdown():

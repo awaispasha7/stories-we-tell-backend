@@ -108,6 +108,11 @@ class VectorStorageService:
             
             if result.data:
                 print(f"SUCCESS: Found {len(result.data)} similar user messages")
+                # Debug: Check user isolation
+                for message in result.data:
+                    msg_user_id = message.get('user_id')
+                    if msg_user_id != str(user_id):
+                        print(f"🚨 SECURITY WARNING: Found message from different user! Expected: {user_id}, Found: {msg_user_id}")
                 return result.data
             else:
                 print("INFO: No similar user messages found")
@@ -257,6 +262,64 @@ class VectorStorageService:
             print(f"ERROR: Failed to get pending embeddings: {e}")
             return []
     
+    async def store_document_embedding(
+        self,
+        asset_id: UUID,
+        user_id: UUID,
+        project_id: UUID,
+        document_type: str,
+        chunk_index: int,
+        chunk_text: str,
+        embedding: List[float],
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[UUID]:
+        """
+        Store embedding for a document chunk
+        
+        Args:
+            asset_id: ID of the asset
+            user_id: ID of the user
+            project_id: ID of the project
+            document_type: Type of document ('pdf', 'docx', 'txt', etc.)
+            chunk_index: Index of the chunk within the document
+            chunk_text: Text content of the chunk
+            embedding: Embedding vector
+            metadata: Optional metadata
+            
+        Returns:
+            ID of the created embedding record
+        """
+        try:
+            embedding_data = {
+                "embedding_id": str(uuid4()),
+                "asset_id": str(asset_id),
+                "user_id": str(user_id),
+                "project_id": str(project_id),
+                "document_type": document_type,
+                "chunk_index": chunk_index,
+                "chunk_text": chunk_text,
+                "embedding": embedding,
+                "metadata": metadata or {},
+                "created_at": datetime.now().isoformat()
+            }
+            
+            print(f"🔍 VectorStorage: Storing embedding with user_id: {str(user_id)}")
+            print(f"🔍 VectorStorage: Embedding data user_id: {embedding_data['user_id']}")
+            
+            result = self.supabase.table("document_embeddings").insert([embedding_data]).execute()
+            
+            if result.data:
+                print(f"SUCCESS: Stored document embedding for asset {asset_id}, chunk {chunk_index}")
+                print(f"🔍 VectorStorage: Stored with user_id: {result.data[0].get('user_id')}")
+                return UUID(result.data[0]["embedding_id"])
+            else:
+                print(f"ERROR: Failed to store document embedding for asset {asset_id}")
+                return None
+                
+        except Exception as e:
+            print(f"ERROR: Failed to store document embedding: {e}")
+            return None
+
     async def update_queue_status(
         self,
         queue_id: UUID,

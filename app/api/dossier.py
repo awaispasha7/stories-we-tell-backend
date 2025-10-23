@@ -12,7 +12,7 @@ from ..database.session_service_supabase import session_service
 
 router = APIRouter()
 
-def get_user_id_only(x_user_id: Optional[str] = Header(None)) -> UUID:
+def get_user_id_only(x_user_id: Optional[str] = Header(None, alias="X-User-ID")) -> UUID:
     """Get user ID from header, with fallback to default user"""
     if x_user_id:
         try:
@@ -49,7 +49,7 @@ async def get_or_create_default_user() -> UUID:
         print(f"❌ Failed to create default user: {e}")
         raise HTTPException(status_code=500, detail="No users available and cannot create default user")
 
-def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> UUID:
+def get_current_user_id(x_user_id: Optional[str] = Header(None, alias="X-User-ID")) -> UUID:
     """Get current user ID from header"""
     if not x_user_id:
         raise HTTPException(status_code=401, detail="User authentication required")

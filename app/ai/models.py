@@ -88,8 +88,19 @@ class AIModelManager:
             print(f"🤖 Attempting to call OpenAI with model: gpt-4o-mini")
             print(f"🤖 Prompt: '{prompt[:100]}...'")
             
+            # Check for RAG context from uploaded documents
+            rag_context = kwargs.get("rag_context")
+            document_context = ""
+            if rag_context and rag_context.get("document_context"):
+                document_chunks = rag_context["document_context"]
+                if document_chunks:
+                    document_context = "\n\nUPLOADED DOCUMENT CONTEXT:\n"
+                    for i, chunk in enumerate(document_chunks[:3]):  # Limit to 3 chunks
+                        document_context += f"--- Document Chunk {i+1} ---\n{chunk.get('chunk_text', '')}\n\n"
+                    print(f"📄 Including {len(document_chunks)} document chunks in context")
+            
             # Story-oriented approach: Who, What, When, Why structure
-            system_prompt = """You are a cinematic story development assistant for Stories We Tell. Your role is to help users develop compelling stories by following a natural storytelling structure.
+            system_prompt = f"""You are a cinematic story development assistant for Stories We Tell. Your role is to help users develop compelling stories by following a natural storytelling structure.
 
         STORY DEVELOPMENT FRAMEWORK (Who, What, When, Why):
         1. WHO - Characters (protagonist, antagonist, supporting cast)
@@ -105,12 +116,14 @@ class AIModelManager:
         5. Don't ask questions the user has already answered
         6. Be warm, encouraging, and story-focused
         7. Avoid repetitive questions - if you know the genre, don't ask again
+        8. If the user has uploaded documents, REFERENCE and ANALYZE the content to help develop their story
 
         CONVERSATION FLOW:
         - Start with the most basic element (usually WHO - the main character)
         - Build naturally from there
         - If user mentions multiple elements, focus on the most important one
         - Always acknowledge what they've shared before asking the next question
+        - If documents are uploaded, use that content to inform your questions and suggestions
 
         Examples:
         ❌ BAD: "What's your story about? What genre is it? Who are the characters?"
@@ -119,7 +132,10 @@ class AIModelManager:
         ❌ BAD: Asking "What genre?" when user already said "thriller"
         ✅ GOOD: "A thriller sounds exciting! What's the main conflict or mystery your protagonist will face?"
 
-        Be conversational, story-focused, and build naturally on what they share."""
+        ❌ BAD: Ignoring uploaded content when user asks about it
+        ✅ GOOD: "Based on your uploaded document, I can see you have a story about [specific details]. Let's develop this further..."
+
+        Be conversational, story-focused, and build naturally on what they share.{document_context}"""
 
             # Build messages with conversation history for context
             messages = [{"role": "system", "content": system_prompt}]

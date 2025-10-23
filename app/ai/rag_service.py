@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from .embedding_service import get_embedding_service
 from .vector_storage import vector_storage
+from .document_processor import document_processor
 
 
 class RAGService:
@@ -17,11 +18,13 @@ class RAGService:
         self.vector_storage = vector_storage
         
         # Configuration for retrieval
-        self.user_context_weight = 0.7  # 70% weight on user-specific context
-        self.global_context_weight = 0.3  # 30% weight on global patterns
-        self.user_match_count = 8  # Retrieve top 8 similar user messages
-        self.global_match_count = 3  # Retrieve top 3 global patterns
-        self.similarity_threshold = 0.6  # Minimum similarity score
+        self.user_context_weight = 0.5  # 50% weight on user-specific context
+        self.global_context_weight = 0.2  # 20% weight on global patterns
+        self.document_context_weight = 0.3  # 30% weight on document context
+        self.user_match_count = 6  # Retrieve top 6 similar user messages
+        self.global_match_count = 2  # Retrieve top 2 global patterns
+        self.document_match_count = 3  # Retrieve top 3 document chunks
+        self.similarity_threshold = 0.1  # Very low threshold for testing
     
     def _get_embedding_service(self):
         """Lazy initialization of embedding service"""
@@ -85,22 +88,54 @@ class RAGService:
                 min_quality_score=0.6
             )
             
-            # Step 4: Build combined context text for LLM prompt
-            combined_context_text = self._format_rag_context(user_context, global_context)
+            # Step 4: Debug - Check if there are any document embeddings for this user
+            try:
+                from app.database.supabase import get_supabase_client
+                supabase = get_supabase_client()
+                print(f"🔍 RAG Debug: Querying for user_id: {str(user_id)} (type: {type(user_id)})")
+                debug_result = supabase.table('document_embeddings').select('*').eq('user_id', str(user_id)).execute()
+                print(f"🔍 RAG Debug: Found {len(debug_result.data)} document embeddings for user {user_id}")
+                
+                # Also check all embeddings to see what's in the database
+                all_embeddings = supabase.table('document_embeddings').select('user_id, asset_id, project_id').execute()
+                print(f"🔍 RAG Debug: Total embeddings in database: {len(all_embeddings.data)}")
+                for row in all_embeddings.data:
+                    print(f"  - User: {row.get('user_id')}, Asset: {row.get('asset_id')}, Project: {row.get('project_id')}")
+                
+                if debug_result.data:
+                    for row in debug_result.data:
+                        print(f"  - Asset: {row.get('asset_id')}, Project: {row.get('project_id')}, Type: {row.get('document_type')}")
+            except Exception as e:
+                print(f"🔍 RAG Debug: Error checking embeddings: {e}")
             
-            # Step 5: Build metadata
+            # Step 4: Retrieve document context (search across all projects for user)
+            print(f"🔍 RAG: Calling get_document_context with user_id: {user_id} (type: {type(user_id)})")
+            document_context = await document_processor.get_document_context(
+                query_embedding=query_embedding,
+                user_id=user_id,
+                project_id=None,  # Search across all projects for this user
+                match_count=self.document_match_count,
+                similarity_threshold=self.similarity_threshold
+            )
+            
+            # Step 5: Build combined context text for LLM prompt
+            combined_context_text = self._format_rag_context(user_context, global_context, document_context)
+            
+            # Step 6: Build metadata
             metadata = {
                 "user_context_count": len(user_context),
                 "global_context_count": len(global_context),
+                "document_context_count": len(document_context),
                 "query_length": len(user_message),
                 "has_conversation_history": bool(conversation_history)
             }
             
-            print(f"RAG: Retrieved {len(user_context)} user contexts, {len(global_context)} global patterns")
+            print(f"RAG: Retrieved {len(user_context)} user contexts, {len(global_context)} global patterns, {len(document_context)} document chunks")
             
             return {
                 "user_context": user_context,
                 "global_context": global_context,
+                "document_context": document_context,
                 "combined_context_text": combined_context_text,
                 "metadata": metadata
             }
@@ -110,6 +145,7 @@ class RAGService:
             return {
                 "user_context": [],
                 "global_context": [],
+                "document_context": [],
                 "combined_context_text": "",
                 "metadata": {"error": str(e)}
             }
@@ -117,7 +153,8 @@ class RAGService:
     def _format_rag_context(
         self,
         user_context: List[Dict[str, Any]],
-        global_context: List[Dict[str, Any]]
+        global_context: List[Dict[str, Any]],
+        document_context: List[Dict[str, Any]]
     ) -> str:
         """
         Format retrieved context into a prompt-friendly string
@@ -125,6 +162,7 @@ class RAGService:
         Args:
             user_context: User-specific messages
             global_context: Global knowledge patterns
+            document_context: Document chunks
             
         Returns:
             Formatted context string
@@ -139,6 +177,18 @@ class RAGService:
                 content = item.get('content', '')
                 similarity = item.get('similarity', 0)
                 context_parts.append(f"{i}. [{role.upper()}] (relevance: {similarity:.2f}) {content[:200]}...")
+            context_parts.append("")
+        
+        # Add document context
+        if document_context:
+            context_parts.append("## Relevant Information from Your Uploaded Documents:")
+            for i, item in enumerate(document_context, 1):
+                doc_type = item.get('document_type', 'unknown')
+                chunk_text = item.get('chunk_text', '')
+                similarity = item.get('similarity', 0)
+                context_parts.append(
+                    f"{i}. [{doc_type.upper()}] (relevance: {similarity:.2f}) {chunk_text[:200]}..."
+                )
             context_parts.append("")
         
         # Add global knowledge context
