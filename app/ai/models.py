@@ -263,7 +263,7 @@ class AIModelManager:
         - If outcome is Unknown → Ask "How does the story end?"
 
         CONVERSATION CONTEXT:
-        {self._build_conversation_context(conversation_history)}
+        {self._build_conversation_context(kwargs.get("conversation_history", []))}
 
         Be Ariel - warm, story-focused, and always building on what they share.{document_context}{dossier_info}"""
 
@@ -271,10 +271,10 @@ class AIModelManager:
             messages = [{"role": "system", "content": system_prompt}]
             
             # Add conversation history if provided
-            conversation_history = kwargs.get("conversation_history", [])
-            if conversation_history:
+            history = kwargs.get("conversation_history", [])
+            if history:
                 # Limit to last 10 messages to avoid token limits
-                recent_history = conversation_history[-10:]
+                recent_history = history[-10:]
                 messages.extend(recent_history)
                 print(f"📚 Using {len(recent_history)} messages from history for context")
             
