@@ -75,7 +75,7 @@ class SimpleSessionManager:
                 return {
                     "session_id": session["session_id"],
                     "user_id": str(user_id),
-                    "project_id": session["project_id"],
+                    "project_id": str(session["project_id"]) if session["project_id"] else None,
                     "is_authenticated": True,
                     "user": user
                 }
@@ -85,7 +85,7 @@ class SimpleSessionManager:
         new_project_id = project_id or uuid4()
         
         # Ensure dossier exists for the project
-        await SimpleSessionManager._ensure_dossier_exists(new_project_id, user_id)
+        await SimpleSessionManager._ensure_dossier_exists(new_project_id, str(user_id))
         
         session_data = {
             "session_id": new_session_id,
@@ -146,7 +146,7 @@ class SimpleSessionManager:
         return {
             "session_id": session_id,
             "user_id": str(user_id),
-            "project_id": session["project_id"],
+            "project_id": str(session["project_id"]) if session["project_id"] else None,
             "is_authenticated": not user["email"].startswith("anonymous_"),
             "user": user
         }
@@ -176,11 +176,11 @@ class SimpleSessionManager:
         new_project_id = project_id or uuid4()
         
         # Ensure dossier exists for the project
-        await SimpleSessionManager._ensure_dossier_exists(new_project_id, temp_user_id)
+        await SimpleSessionManager._ensure_dossier_exists(new_project_id, str(temp_user_id))
         
         session_data = {
             "session_id": session_id,
-            "user_id": temp_user_id,
+            "user_id": str(temp_user_id),
             "project_id": str(new_project_id),
             "title": "New Chat",
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -304,7 +304,7 @@ class SimpleSessionManager:
             # Create dossier
             dossier_data = {
                 "project_id": str(project_id),
-                "user_id": user_id,
+                "user_id": str(user_id),  # Ensure user_id is also converted to string
                 "snapshot_json": {},
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
@@ -330,7 +330,8 @@ async def get_or_create_session(
             project_id=parsed_project_id
         )
         
-        return {
+        # Ensure all UUID objects are converted to strings for JSON serialization
+        response_data = {
             "success": True,
             "session_id": str(result["session_id"]),
             "user_id": str(result["user_id"]),
@@ -338,6 +339,8 @@ async def get_or_create_session(
             "is_authenticated": result["is_authenticated"],
             "user": result["user"]
         }
+        
+        return response_data
         
     except Exception as e:
         print(f"Error in get_or_create_session: {e}")
