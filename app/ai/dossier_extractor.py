@@ -44,45 +44,52 @@ class DossierExtractor:
             for msg in conversation_history
         ])
         
-        # Extraction prompt
-        extraction_prompt = f"""Based on this conversation about a story, extract structured metadata.
+        # Extraction prompt - Updated to match client requirements
+        extraction_prompt = f"""Based on this conversation about a story, extract structured metadata following the client's slot-based framework.
 
 Conversation:
 {context}
 
 Extract the following information (use "Unknown" if not mentioned):
-1. Title: The story's working title
-2. Logline: One-sentence story summary
-3. Genre: Primary genre (e.g., Drama, Comedy, Thriller, Sci-Fi, Horror, Romance)
-4. Tone: Overall tone (e.g., Dark, Light, Suspenseful, Intimate, Epic)
-5. Characters: List of main characters with brief descriptions
-6. Scenes: Key scenes or moments mentioned
-7. Locations: Settings where the story takes place
+
+STORY FRAME (Frame-first approach):
+1. story_timeframe: When does the story take place?
+2. story_location: Where does it take place?
+3. story_world_type: Real/Invented-in-our-world/Invented-other-world
+4. writer_connection_place_time: Connection to writer's time/place
+
+CHARACTER (Subject):
+5. subject_exists_real_world: boolean/unknown
+6. subject_full_name: Character's name
+7. subject_relationship_to_writer: Relationship to writer
+8. subject_brief_description: Brief character description
+
+STORY CRAFT:
+9. problem_statement: What problem does the character face?
+10. actions_taken: What actions does the character take?
+11. outcome: What is the outcome?
+12. likes_in_story: What does the writer like about this story?
+
+TECHNICAL:
+13. runtime: Estimated runtime (3-5 minutes)
+14. title: Working title (if mentioned)
 
 Respond ONLY with valid JSON in this exact format:
 {{
-    "title": "string",
-    "logline": "string",
-    "genre": "string",
-    "tone": "string",
-    "characters": [
-        {{
-            "character_id": "char_1",
-            "name": "Character Name",
-            "description": "Brief description"
-        }}
-    ],
-    "scenes": [
-        {{
-            "scene_id": "scene_1",
-            "one_liner": "Brief scene description",
-            "description": "Detailed description",
-            "time_of_day": "Day/Night",
-            "interior_exterior": "INT/EXT",
-            "tone": "Scene tone"
-        }}
-    ],
-    "locations": ["location1", "location2"]
+    "story_timeframe": "string",
+    "story_location": "string", 
+    "story_world_type": "Real/Invented-in-our-world/Invented-other-world",
+    "writer_connection_place_time": "string",
+    "subject_exists_real_world": "boolean/unknown",
+    "subject_full_name": "string",
+    "subject_relationship_to_writer": "string",
+    "subject_brief_description": "string",
+    "problem_statement": "string",
+    "actions_taken": "string", 
+    "outcome": "string",
+    "likes_in_story": "string",
+    "runtime": "3-5 minutes",
+    "title": "string"
 }}"""
 
         try:
@@ -126,15 +133,22 @@ Respond ONLY with valid JSON in this exact format:
             
         except Exception as e:
             print(f"❌ Metadata extraction error: {str(e)}")
-            # Return default structure on error
+            # Return default structure on error - matching client requirements
             return {
-                "title": "Untitled Story",
-                "logline": "A compelling story waiting to be told...",
-                "genre": "Unknown",
-                "tone": "Unknown",
-                "characters": [],
-                "scenes": [],
-                "locations": []
+                "story_timeframe": "Unknown",
+                "story_location": "Unknown", 
+                "story_world_type": "Unknown",
+                "writer_connection_place_time": "Unknown",
+                "subject_exists_real_world": "unknown",
+                "subject_full_name": "Unknown",
+                "subject_relationship_to_writer": "Unknown",
+                "subject_brief_description": "Unknown",
+                "problem_statement": "Unknown",
+                "actions_taken": "Unknown", 
+                "outcome": "Unknown",
+                "likes_in_story": "Unknown",
+                "runtime": "3-5 minutes",
+                "title": "Untitled Story"
             }
     
     async def should_update_dossier(self, conversation_history: list) -> bool:

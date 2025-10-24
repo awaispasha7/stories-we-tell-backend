@@ -76,14 +76,18 @@ async def chat(
         # Store user message embedding for RAG
         if rag_service and user_message_id:
             try:
+                # For anonymous users, use session_id as consistent user_id for RAG
+                rag_user_id = UUID(user_id) if is_authenticated else UUID(session_id)
+                print(f"📚 Using RAG user_id: {rag_user_id} (authenticated: {is_authenticated})")
+                
                 await rag_service.embed_and_store_message(
                     message_id=UUID(user_message_id),
-                    user_id=UUID(user_id),
+                    user_id=rag_user_id,
                     project_id=UUID(project_id) if project_id else None,
                     session_id=UUID(session_id),
                     content=chat_request.text,
                     role="user",
-                    metadata={"is_authenticated": is_authenticated}
+                    metadata={"is_authenticated": is_authenticated, "original_user_id": str(user_id)}
                 )
                 print(f"📚 Stored user message embedding: {user_message_id}")
             except Exception as e:
@@ -97,14 +101,31 @@ async def chat(
                 
                 # Generate AI response
                 if AI_AVAILABLE and ai_manager:
+                    # Get or create dossier for this project
+                    dossier_context = None
+                    if dossier_extractor and project_id:
+                        try:
+                            from ..database.session_service_supabase import session_service
+                            # Get existing dossier
+                            dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                            if dossier and dossier.snapshot_json:
+                                dossier_context = dossier.snapshot_json
+                                print(f"📋 Using existing dossier: {dossier.title}")
+                            else:
+                                print(f"📋 No existing dossier found for project {project_id}")
+                        except Exception as e:
+                            print(f"⚠️ Dossier retrieval error: {e}")
+                    
                     # Get RAG context from uploaded documents
                     rag_context = None
                     if rag_service:
                         try:
-                            print(f"🔍 Getting RAG context for user: {user_id}, project: {project_id}")
+                            # Use consistent user_id for RAG (same as storage)
+                            rag_user_id = UUID(user_id) if is_authenticated else UUID(session_id)
+                            print(f"🔍 Getting RAG context for user: {rag_user_id}, project: {project_id}")
                             rag_context = await rag_service.get_rag_context(
                                 user_message=chat_request.text,
-                                user_id=UUID(user_id),
+                                user_id=rag_user_id,
                                 project_id=UUID(project_id) if project_id else None,
                                 conversation_history=conversation_history
                             )
@@ -113,14 +134,15 @@ async def chat(
                             print(f"⚠️ RAG context error: {e}")
                             rag_context = None
                     
-                    # Use AI manager for response generation with RAG context
+                    # Use AI manager for response generation with RAG and dossier context
                     ai_response = await ai_manager.generate_response(
                         task_type=TaskType.CHAT,
                         prompt=chat_request.text,
                         conversation_history=conversation_history,
                         user_id=user_id,
                         project_id=project_id,
-                        rag_context=rag_context
+                        rag_context=rag_context,
+                        dossier_context=dossier_context
                     )
                     
                     # Get the response content
@@ -150,17 +172,89 @@ async def chat(
                         metadata={"is_authenticated": is_authenticated}
                     )
                     
+                    # Update dossier if needed (after both user and assistant messages are saved)
+                    if dossier_extractor and project_id and len(conversation_history) >= 2:
+                        try:
+                            # Check if we should update the dossier
+                            should_update = await dossier_extractor.should_update_dossier(conversation_history)
+                            if should_update:
+                                print(f"📋 Updating dossier for project {project_id}")
+                                # Extract new metadata from conversation
+                                new_metadata = await dossier_extractor.extract_metadata(conversation_history)
+                                
+                                # Update dossier in database
+                                from ..database.session_service_supabase import session_service
+                                from ..models import DossierUpdate
+                                
+                                dossier_update = DossierUpdate(
+                                    snapshot_json=new_metadata
+                                )
+                                
+                                updated_dossier = session_service.update_dossier(
+                                    UUID(project_id), 
+                                    UUID(user_id), 
+                                    dossier_update
+                                )
+                                
+                                if updated_dossier:
+                                    print(f"✅ Dossier updated: {updated_dossier.title}")
+                                    
+                                    # Check if story is complete and trigger script generation + email
+                                    if ai_manager.is_story_complete(new_metadata):
+                                        print(f"🎬 Story is complete! Generating script and sending email...")
+                                        
+                                        try:
+                                            # Generate video script
+                                            script_response = await ai_manager.generate_response(
+                                                task_type=TaskType.SCRIPT,
+                                                prompt="Generate video script",
+                                                dossier_context=new_metadata
+                                            )
+                                            
+                                            generated_script = script_response.get("response", "Script generation failed")
+                                            print(f"✅ Script generated successfully")
+                                            
+                                            # Send email notification
+                                            from ..services.email_service import email_service
+                                            
+                                            # Get user email (you'll need to implement this based on your user system)
+                                            user_email = "user@example.com"  # TODO: Get actual user email
+                                            user_name = "Story Creator"  # TODO: Get actual user name
+                                            
+                                            email_sent = await email_service.send_story_captured_email(
+                                                user_email=user_email,
+                                                user_name=user_name,
+                                                story_data=new_metadata,
+                                                generated_script=generated_script,
+                                                project_id=str(project_id)
+                                            )
+                                            
+                                            if email_sent:
+                                                print(f"✅ Email notification sent successfully")
+                                            else:
+                                                print(f"⚠️ Email notification failed")
+                                                
+                                        except Exception as e:
+                                            print(f"⚠️ Script generation or email error: {e}")
+                                    
+                                else:
+                                    print(f"⚠️ Failed to update dossier")
+                        except Exception as e:
+                            print(f"⚠️ Dossier update error: {e}")
+                    
                     # Store message embeddings for RAG
                     if rag_service and assistant_message_id:
                         try:
+                            # Use consistent user_id for RAG (same as storage)
+                            rag_user_id = UUID(user_id) if is_authenticated else UUID(session_id)
                             await rag_service.embed_and_store_message(
                                 message_id=UUID(assistant_message_id),
-                                user_id=UUID(user_id),
+                                user_id=rag_user_id,
                                 project_id=UUID(project_id) if project_id else None,
                                 session_id=UUID(session_id),
                                 content=full_response,
                                 role="assistant",
-                                metadata={"is_authenticated": is_authenticated}
+                                metadata={"is_authenticated": is_authenticated, "original_user_id": str(user_id)}
                             )
                             print(f"📚 Stored assistant message embedding: {assistant_message_id}")
                         except Exception as e:
@@ -194,14 +288,16 @@ async def chat(
                     # Store fallback message embedding for RAG
                     if rag_service and fallback_message_id:
                         try:
+                            # Use consistent user_id for RAG (same as storage)
+                            rag_user_id = UUID(user_id) if is_authenticated else UUID(session_id)
                             await rag_service.embed_and_store_message(
                                 message_id=UUID(fallback_message_id),
-                                user_id=UUID(user_id),
+                                user_id=rag_user_id,
                                 project_id=UUID(project_id) if project_id else None,
                                 session_id=UUID(session_id),
                                 content=fallback_response,
                                 role="assistant",
-                                metadata={"is_authenticated": is_authenticated, "fallback": True}
+                                metadata={"is_authenticated": is_authenticated, "fallback": True, "original_user_id": str(user_id)}
                             )
                             print(f"📚 Stored fallback message embedding: {fallback_message_id}")
                         except Exception as e:
