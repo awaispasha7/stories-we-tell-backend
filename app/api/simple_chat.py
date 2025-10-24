@@ -93,12 +93,12 @@ async def chat(
             except Exception as e:
                 print(f"⚠️ Failed to store user message embedding: {e}")
         
+        # Get conversation history for context (moved outside generate_stream to fix scope issue)
+        conversation_history = await _get_conversation_history(str(session_id), str(user_id))
+        
         # Generate and stream AI response
         async def generate_stream():
             try:
-                # Get conversation history for context
-                conversation_history = await _get_conversation_history(str(session_id), str(user_id))
-                
                 # Generate AI response
                 if AI_AVAILABLE and ai_manager:
                     # Get or create dossier for this project
