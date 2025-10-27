@@ -363,6 +363,44 @@ class VectorStorageService:
             print(f"ERROR: Failed to update queue status: {e}")
 
 
+# Convenience function for storing image analysis in RAG
+async def store_global_knowledge(content: str, metadata: Dict[str, Any]) -> Optional[UUID]:
+    """
+    Convenience function to store image analysis in global knowledge base
+    
+    Args:
+        content: The image analysis content
+        metadata: Metadata including type, image_type, asset_id, etc.
+        
+    Returns:
+        ID of the created knowledge record
+    """
+    try:
+        from .embedding_service import get_embedding_service
+        
+        # Get embedding for the content
+        embedding_service = get_embedding_service()
+        embedding = await embedding_service.generate_embedding(content)
+        
+        # Extract metadata
+        image_type = metadata.get("image_type", "general")
+        asset_id = metadata.get("asset_id", "unknown")
+        
+        # Store in global knowledge using existing schema
+        return await vector_storage.store_global_knowledge(
+            category="image_analysis",
+            pattern_type=image_type,
+            embedding=embedding,
+            example_text=content,
+            description=f"Image analysis for {image_type} (Asset: {asset_id})",
+            quality_score=0.8,  # High quality for AI-generated analysis
+            tags=[image_type, "ai_analysis", "image"]
+        )
+        
+    except Exception as e:
+        print(f"ERROR: Failed to store image analysis in RAG: {e}")
+        return None
+
 # Global singleton instance
 vector_storage = VectorStorageService()
 

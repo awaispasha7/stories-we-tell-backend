@@ -51,7 +51,7 @@ class AIModelManager:
             TaskType.SCENE: "gpt-4.1",  # Flagship for deep text generation
         }
     
-    def _build_conversation_context(self, conversation_history: list) -> str:
+    def _build_conversation_context(self, conversation_history: list, image_context: str = "") -> str:
         """Build conversation context for the system prompt"""
         if not conversation_history:
             return "This is the start of our conversation."
@@ -85,6 +85,10 @@ class AIModelManager:
         
         if story_elements:
             context_parts.append("Story development is in progress")
+        
+        # Add image context if available
+        if image_context:
+            context_parts.append(f"Visual context: {image_context}")
         
         return " | ".join(context_parts) if context_parts else "Conversation in progress"
 
@@ -229,9 +233,21 @@ class AIModelManager:
         - NEVER ask "Who is he/she?" if character name is already established
 
         STORY COMPLETION DETECTION:
-        - Look for phrases: "at the end", "finally", "in conclusion", "that's the story"
+        - Look for phrases: "at the end", "finally", "in conclusion", "that's the story", "that's my story", "story complete", "i'm done", "finished", "that's all", "the end"
         - When story seems complete, acknowledge and move to next phase
         - Don't keep asking questions if story is finished
+        - After story completion, suggest: "Would you like to create another story? Sign up to create unlimited stories and save your progress!"
+        
+        NEW STORY REQUESTS & USER INTENT:
+        - NATURALLY detect when users want to create new stories (any variation of "I want another story", "new story", "start over", "different story")
+        - For authenticated users: "Great! Let's start a new story. What story idea is on your mind?"
+        - For anonymous users: "I'd love to help you create another story! To create unlimited stories and save your progress, please sign up. It's free and takes just a moment!"
+        - Always be proactive about suggesting signup when users express interest in multiple stories
+        
+        CHARACTER CONNECTION SYNONYMS:
+        - Accept multiple terms for writer/creator relationship: "writer", "creator", "author", "screenwriter", "storyteller", "I'm just the writer", "I'm only the creator"
+        - Don't get confused by different terms - they all mean the same thing
+        - Use the term the user prefers in your responses
 
         RESPONSE GUIDELINES:
         1. Keep responses SHORT (1-2 sentences max)
@@ -263,7 +279,7 @@ class AIModelManager:
         - If outcome is Unknown → Ask "How does the story end?"
 
         CONVERSATION CONTEXT:
-        {self._build_conversation_context(kwargs.get("conversation_history", []))}
+        {self._build_conversation_context(kwargs.get("conversation_history", []), kwargs.get("image_context", ""))}
 
         Be Ariel - warm, story-focused, and always building on what they share.{document_context}{dossier_info}"""
 

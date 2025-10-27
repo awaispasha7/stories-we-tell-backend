@@ -69,6 +69,7 @@ class ChatRequest(BaseModel):
     text: str
     session_id: Optional[UUID] = None  # If provided, continue existing session
     project_id: Optional[UUID] = None  # If provided, create new session
+    attached_files: Optional[List[Dict[str, Any]]] = None  # Attached files with metadata
 
 class ChatResponse(BaseModel):
     reply: str
