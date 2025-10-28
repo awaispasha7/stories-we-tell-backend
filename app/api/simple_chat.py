@@ -262,7 +262,7 @@ async def chat(
                     
                 else:
                     # Fallback response if AI is not available
-                    fallback_response = "I'm here to help you develop your story! However, the AI system is currently unavailable. Please try again later."
+                    fallback_response = "Woops! Something went wrong. Please try again later."
                     
                     # Stream fallback response
                     words = fallback_response.split()
