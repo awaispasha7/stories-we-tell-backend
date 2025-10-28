@@ -70,7 +70,10 @@ async def chat(
             user_id=str(user_id),
             role="user",
             content=chat_request.text,
-            metadata={"is_authenticated": is_authenticated}
+            metadata={
+                "is_authenticated": is_authenticated,
+                "attached_files": chat_request.attached_files or []
+            }
         )
         
         # Store user message embedding for RAG
@@ -387,7 +390,8 @@ async def _get_conversation_history(session_id: str, user_id: str, limit: int = 
         conversation.append({
             "role": message["role"],
             "content": message["content"],
-            "timestamp": message["created_at"]
+            "timestamp": message["created_at"],
+            "attached_files": message.get("metadata", {}).get("attached_files", [])
         })
     
     print(f"📚 Retrieved {len(conversation)} messages from conversation history for session {session_id}")
