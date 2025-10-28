@@ -80,9 +80,15 @@ async def chat(
         # Store user message embedding for RAG
         if rag_service and user_message_id:
             try:
-                # For anonymous users, use session_id as consistent user_id for RAG
-                rag_user_id = UUID(user_id) if is_authenticated else UUID(session_id)
-                print(f"📚 Using RAG user_id: {rag_user_id} (authenticated: {is_authenticated})")
+                if is_authenticated:
+                    # For authenticated users, use their actual user_id
+                    rag_user_id = UUID(user_id)
+                    print(f"📚 Using RAG user_id: {rag_user_id} (authenticated: {is_authenticated})")
+                else:
+                    # For anonymous users, use the special anonymous user ID
+                    # This allows RAG to work while maintaining session isolation
+                    rag_user_id = UUID("00000000-0000-0000-0000-000000000000")
+                    print(f"📚 Using anonymous user_id for RAG: {rag_user_id} (session: {session_id})")
                 
                 await rag_service.embed_and_store_message(
                     message_id=UUID(user_message_id),
@@ -91,7 +97,7 @@ async def chat(
                     session_id=UUID(session_id),
                     content=chat_request.text,
                     role="user",
-                    metadata={"is_authenticated": is_authenticated, "original_user_id": str(user_id)}
+                    metadata={"is_authenticated": is_authenticated, "original_user_id": str(user_id), "session_id": str(session_id)}
                 )
                 print(f"📚 Stored user message embedding: {user_message_id}")
             except Exception as e:
@@ -154,9 +160,15 @@ async def chat(
                     rag_context = None
                     if rag_service:
                         try:
-                            # Use consistent user_id for RAG (same as storage)
-                            rag_user_id = UUID(user_id) if is_authenticated else UUID(session_id)
-                            print(f"🔍 Getting RAG context for user: {rag_user_id}, project: {project_id}")
+                            if is_authenticated:
+                                # For authenticated users, use their actual user_id
+                                rag_user_id = UUID(user_id)
+                                print(f"🔍 Getting RAG context for user: {rag_user_id}, project: {project_id}")
+                            else:
+                                # For anonymous users, use the special anonymous user ID
+                                rag_user_id = UUID("00000000-0000-0000-0000-000000000000")
+                                print(f"🔍 Getting RAG context for anonymous user: {rag_user_id}, project: {project_id}")
+                            
                             rag_context = await rag_service.get_rag_context(
                                 user_message=chat_request.text,
                                 user_id=rag_user_id,
@@ -285,8 +297,13 @@ async def chat(
                     # Store message embeddings for RAG
                     if rag_service and assistant_message_id:
                         try:
-                            # Use consistent user_id for RAG (same as storage)
-                            rag_user_id = UUID(user_id) if is_authenticated else UUID(session_id)
+                            if is_authenticated:
+                                # For authenticated users, use their actual user_id
+                                rag_user_id = UUID(user_id)
+                            else:
+                                # For anonymous users, use the special anonymous user ID
+                                rag_user_id = UUID("00000000-0000-0000-0000-000000000000")
+                            
                             await rag_service.embed_and_store_message(
                                 message_id=UUID(assistant_message_id),
                                 user_id=rag_user_id,
@@ -294,7 +311,7 @@ async def chat(
                                 session_id=UUID(session_id),
                                 content=full_response,
                                 role="assistant",
-                                metadata={"is_authenticated": is_authenticated, "original_user_id": str(user_id)}
+                                metadata={"is_authenticated": is_authenticated, "original_user_id": str(user_id), "session_id": str(session_id)}
                             )
                             print(f"📚 Stored assistant message embedding: {assistant_message_id}")
                         except Exception as e:
