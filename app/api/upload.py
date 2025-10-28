@@ -49,6 +49,14 @@ async def upload_files(
     print(f"📥 User ID type: {type(x_user_id)}")
     print(f"📥 User ID repr: {repr(x_user_id)}")
     
+    # Debug: Check if we have the required data for guest users
+    if not x_user_id and not x_session_id:
+        print("⚠️ [UPLOAD] Guest user with no session ID - this might cause issues")
+    elif not x_user_id and x_session_id:
+        print("✅ [UPLOAD] Guest user with session ID - should work")
+    elif x_user_id:
+        print("✅ [UPLOAD] Authenticated user - should work")
+    
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
     
