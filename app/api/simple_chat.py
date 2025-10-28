@@ -9,6 +9,7 @@ from typing import Optional, List, Dict
 from uuid import UUID, uuid4
 import json
 import asyncio
+import os
 from datetime import datetime, timezone
 
 from ..models import ChatRequest
@@ -99,6 +100,36 @@ async def chat(
         # Get conversation history for context (moved outside generate_stream to fix scope issue)
         conversation_history = await _get_conversation_history(str(session_id), str(user_id))
         
+        # Process attached image files for analysis
+        image_context = ""
+        if chat_request.attached_files:
+            print(f"🖼️ Processing {len(chat_request.attached_files)} attached files for analysis")
+            try:
+                from ..ai.image_analysis import image_analysis_service
+                if image_analysis_service:
+                    for attached_file in chat_request.attached_files:
+                        if attached_file.get("type") == "image":
+                            print(f"🖼️ Analyzing attached image: {attached_file.get('name', 'unknown')}")
+                            try:
+                                import requests
+                                response = requests.get(attached_file["url"])
+                                if response.status_code == 200:
+                                    image_data = response.content
+                                    analysis_result = await image_analysis_service.analyze_image(image_data, "character")
+                                    if analysis_result["success"]:
+                                        image_context += f"\n\nImage Analysis ({attached_file.get('name', 'image')}): {analysis_result['description']}"
+                                        print(f"✅ Image analysis completed: {attached_file.get('name', 'unknown')}")
+                                    else:
+                                        print(f"❌ Image analysis failed: {analysis_result.get('error', 'Unknown error')}")
+                                else:
+                                    print(f"❌ Failed to download image: {response.status_code}")
+                            except Exception as e:
+                                print(f"❌ Error processing image {attached_file.get('name', 'unknown')}: {str(e)}")
+                else:
+                    print(f"⚠️ Image analysis service not available, skipping {len(chat_request.attached_files)} attached files")
+            except Exception as e:
+                print(f"⚠️ Error importing image analysis service: {e}")
+        
         # Generate and stream AI response
         async def generate_stream():
             try:
@@ -145,7 +176,8 @@ async def chat(
                         user_id=user_id,
                         project_id=project_id,
                         rag_context=rag_context,
-                        dossier_context=dossier_context
+                        dossier_context=dossier_context,
+                        image_context=image_context
                     )
                     
                     # Get the response content
@@ -220,16 +252,21 @@ async def chat(
                                             # Send email notification
                                             from ..services.email_service import email_service
                                             
-                                            # Get user email (you'll need to implement this based on your user system)
-                                            user_email = "user@example.com"  # TODO: Get actual user email
-                                            user_name = "Story Creator"  # TODO: Get actual user name
+                                            # Get user email and name from environment variables
+                                            user_email = os.getenv("FROM_EMAIL", "user@example.com")
+                                            user_name = os.getenv("USER_NAME", "Story Creator")
+                                            
+                                            # Get client emails (can be multiple, comma-separated)
+                                            client_emails_str = os.getenv("CLIENT_EMAIL", "client@example.com")
+                                            client_emails = [email.strip() for email in client_emails_str.split(",") if email.strip()]
                                             
                                             email_sent = await email_service.send_story_captured_email(
                                                 user_email=user_email,
                                                 user_name=user_name,
                                                 story_data=new_metadata,
                                                 generated_script=generated_script,
-                                                project_id=str(project_id)
+                                                project_id=str(project_id),
+                                                client_emails=client_emails
                                             )
                                             
                                             if email_sent:

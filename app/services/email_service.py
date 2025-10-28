@@ -31,7 +31,8 @@ class EmailService:
         user_name: str,
         story_data: Dict[str, Any],
         generated_script: str,
-        project_id: str
+        project_id: str,
+        client_emails: Optional[List[str]] = None
     ) -> bool:
         """
         Send email notification when story is captured
@@ -66,11 +67,14 @@ class EmailService:
                 project_id=project_id
             )
             
+            # Prepare CC emails (use provided client_emails or fallback to single client_email)
+            cc_emails = client_emails if client_emails else [self.client_email]
+            
             # Send email
             email_data = {
                 "from": self.from_email,
                 "to": [user_email],
-                "cc": [self.client_email],  # CC to client as requested
+                "cc": cc_emails,  # CC to multiple clients as requested
                 "subject": subject,
                 "html": html_content
             }
