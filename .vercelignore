@@ -1,0 +1,48 @@
+# Exclude large files that cause deployment size issues
+*.pdf
+*.docx
+*.mp4
+*.mov
+*.avi
+*.zip
+*.tar.gz
+
+# Exclude test and development files
+test_*
+train_*
+client_document.txt
+sample_knowledge.txt
+DEPLOYMENT_CHECKLIST.md
+README.md
+
+# Exclude development files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Exclude test files
+**/*.test.*
+**/*.spec.*
+__tests__/
+test/
+
+# Exclude documentation
+docs/
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Exclude OS files
+.DS_Store
+Thumbs.db
+
+# Keep these essential files:
+# - requirements.txt
+# - vercel.json
+# - api/
+# - app/
+# - supabase/
