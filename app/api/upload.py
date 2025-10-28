@@ -4,9 +4,24 @@ import uuid
 import os
 import asyncio
 from app.database.supabase import get_supabase_client
-from app.ai.document_processor import document_processor
-from app.ai.image_analysis import image_analysis_service
 from dotenv import load_dotenv
+
+# Try to import AI services with error handling
+try:
+    from app.ai.document_processor import document_processor
+    DOCUMENT_PROCESSOR_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Document processor not available: {e}")
+    DOCUMENT_PROCESSOR_AVAILABLE = False
+    document_processor = None
+
+try:
+    from app.ai.image_analysis import image_analysis_service
+    IMAGE_ANALYSIS_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Image analysis service not available: {e}")
+    IMAGE_ANALYSIS_AVAILABLE = False
+    image_analysis_service = None
 
 router = APIRouter()
 load_dotenv()
@@ -161,7 +176,7 @@ async def upload_files(
                 print(f"✅ File uploaded successfully: {file.filename}")
                 
                 # Analyze image if it's an image file
-                if file_type == 'image':
+                if file_type == 'image' and IMAGE_ANALYSIS_AVAILABLE and image_analysis_service:
                     print(f"🖼️ Analyzing image: {file.filename}")
                     try:
                         # Determine image type based on context (for now, assume character)
@@ -210,7 +225,7 @@ async def upload_files(
                         print(f"❌ Error analyzing image {file.filename}: {str(e)}")
                 
                 # Process document for RAG if it's a text-based document
-                if file_type in ['document', 'script'] and file_extension in ['pdf', 'docx', 'doc', 'txt']:
+                if file_type in ['document', 'script'] and file_extension in ['pdf', 'docx', 'doc', 'txt'] and DOCUMENT_PROCESSOR_AVAILABLE:
                     print(f"🔄 Processing document for RAG: {file.filename}")
                     
                     # Process document asynchronously
