@@ -20,7 +20,6 @@ try:
     from ..ai.models import ai_manager, TaskType
     from ..ai.rag_service import rag_service
     from ..ai.dossier_extractor import dossier_extractor
-    from ..ai.image_analysis import image_analysis_service
     AI_AVAILABLE = True
 except Exception as e:
     print(f"Warning: AI components not available: {e}")
@@ -29,41 +28,8 @@ except Exception as e:
     TaskType = None
     rag_service = None
     dossier_extractor = None
-    image_analysis_service = None
 
 router = APIRouter()
-
-async def get_image_context(session_id: str, supabase) -> str:
-    """
-    Fetch image analysis data for a session to include in chat context
-    """
-    try:
-        # Get all image assets for this session
-        response = supabase.table("assets").select("analysis, analysis_type, analysis_data").eq("project_id", session_id).eq("type", "image").execute()
-        
-        if not response.data:
-            return ""
-        
-        image_contexts = []
-        for asset in response.data:
-            if asset.get("analysis"):
-                analysis_type = asset.get("analysis_type", "general")
-                analysis = asset.get("analysis", "")
-                
-                if analysis_type == "character":
-                    image_contexts.append(f"Character Image: {analysis}")
-                elif analysis_type == "location":
-                    image_contexts.append(f"Location Image: {analysis}")
-                else:
-                    image_contexts.append(f"Image: {analysis}")
-        
-        if image_contexts:
-            return f"\n\nImage Context:\n" + "\n".join(image_contexts)
-        
-        return ""
-    except Exception as e:
-        print(f"Error fetching image context: {e}")
-        return ""
 
 @router.post("/chat")
 async def chat(
@@ -98,45 +64,13 @@ async def chat(
         
         print(f"Chat request - Session: {session_id}, User: {user_id}, Authenticated: {is_authenticated}")
         
-        # Process attached image files for analysis
-        image_context = ""
-        if chat_request.attached_files and image_analysis_service:
-            print(f"🖼️ Processing {len(chat_request.attached_files)} attached files")
-            for attached_file in chat_request.attached_files:
-                if attached_file.get("type") == "image":
-                    print(f"🖼️ Analyzing attached image: {attached_file.get('name', 'unknown')}")
-                    try:
-                        # Download image from URL
-                        import requests
-                        response = requests.get(attached_file["url"])
-                        if response.status_code == 200:
-                            image_data = response.content
-                            
-                            # Analyze the image
-                            analysis_result = await image_analysis_service.analyze_image(image_data, "character")
-                            
-                            if analysis_result["success"]:
-                                image_context += f"\n\nImage Analysis ({attached_file.get('name', 'image')}): {analysis_result['description']}"
-                                print(f"✅ Image analysis completed: {attached_file.get('name', 'unknown')}")
-                            else:
-                                print(f"❌ Image analysis failed: {analysis_result.get('error', 'Unknown error')}")
-                        else:
-                            print(f"❌ Failed to download image: {response.status_code}")
-                    except Exception as e:
-                        print(f"❌ Error processing image {attached_file.get('name', 'unknown')}: {str(e)}")
-        elif chat_request.attached_files and not image_analysis_service:
-            print(f"⚠️ Image analysis service not available, skipping {len(chat_request.attached_files)} attached files")
-        
         # Save user message
         user_message_id = await _save_message(
             session_id=str(session_id),
             user_id=str(user_id),
             role="user",
             content=chat_request.text,
-            metadata={
-                "is_authenticated": is_authenticated,
-                "attached_files": chat_request.attached_files or []
-            }
+            metadata={"is_authenticated": is_authenticated}
         )
         
         # Store user message embedding for RAG
@@ -182,17 +116,6 @@ async def chat(
                         except Exception as e:
                             print(f"⚠️ Dossier retrieval error: {e}")
                     
-                    # Get image context for this session
-                    image_context = ""
-                    if project_id:
-                        try:
-                            image_context = await get_image_context(project_id, get_supabase_client())
-                            if image_context:
-                                print(f"🖼️ Image context retrieved: {len(image_context)} characters")
-                        except Exception as e:
-                            print(f"⚠️ Image context error: {e}")
-                            image_context = ""
-                    
                     # Get RAG context from uploaded documents
                     rag_context = None
                     if rag_service:
@@ -211,7 +134,7 @@ async def chat(
                             print(f"⚠️ RAG context error: {e}")
                             rag_context = None
                     
-                    # Use AI manager for response generation with RAG, dossier, and image context
+                    # Use AI manager for response generation with RAG and dossier context
                     ai_response = await ai_manager.generate_response(
                         task_type=TaskType.CHAT,
                         prompt=chat_request.text,
@@ -219,8 +142,7 @@ async def chat(
                         user_id=user_id,
                         project_id=project_id,
                         rag_context=rag_context,
-                        dossier_context=dossier_context,
-                        image_context=image_context
+                        dossier_context=dossier_context
                     )
                     
                     # Get the response content
@@ -465,8 +387,7 @@ async def _get_conversation_history(session_id: str, user_id: str, limit: int = 
         conversation.append({
             "role": message["role"],
             "content": message["content"],
-            "timestamp": message["created_at"],
-            "attached_files": message.get("metadata", {}).get("attached_files", [])
+            "timestamp": message["created_at"]
         })
     
     print(f"📚 Retrieved {len(conversation)} messages from conversation history for session {session_id}")

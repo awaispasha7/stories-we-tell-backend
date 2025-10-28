@@ -4,14 +4,33 @@ Handles multiple AI providers based on task type as specified by client requirem
 """
 
 import os
-import openai
-import google.generativeai as genai
-import anthropic
 from typing import Dict, Any, Optional
 from enum import Enum
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Try to import AI packages with error handling
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: OpenAI not available: {e}")
+    OPENAI_AVAILABLE = False
+
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Gemini not available: {e}")
+    GEMINI_AVAILABLE = False
+
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Anthropic not available: {e}")
+    ANTHROPIC_AVAILABLE = False
 
 class TaskType(Enum):
     """Task types for AI model selection"""
