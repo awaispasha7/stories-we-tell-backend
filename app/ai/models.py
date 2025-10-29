@@ -178,16 +178,17 @@ class AIModelManager:
             print(f"🤖 Attempting to call OpenAI with model: gpt-4o-mini")
             print(f"🤖 Prompt: '{prompt[:100]}...'")
             
-            # Check for RAG context from uploaded documents
+            # Check for RAG context (includes user messages, documents, and global knowledge)
             rag_context = kwargs.get("rag_context")
-            document_context = ""
-            if rag_context and rag_context.get("document_context"):
-                document_chunks = rag_context["document_context"]
-                if document_chunks:
-                    document_context = "\n\nUPLOADED DOCUMENT CONTEXT:\n"
-                    for i, chunk in enumerate(document_chunks[:3]):  # Limit to 3 chunks
-                        document_context += f"--- Document Chunk {i+1} ---\n{chunk.get('chunk_text', '')}\n\n"
-                    print(f"📄 Including {len(document_chunks)} document chunks in context")
+            rag_context_text = ""
+            
+            if rag_context:
+                # Include combined RAG context (user messages + documents + global knowledge)
+                if rag_context.get("combined_context_text"):
+                    rag_context_text = f"\n\n## RELEVANT CONTEXT FROM YOUR PREVIOUS CONVERSATIONS:\n{rag_context.get('combined_context_text')}\n"
+                    print(f"📚 Including RAG context: {rag_context.get('user_context_count', 0)} user messages, {rag_context.get('document_context_count', 0)} document chunks, {rag_context.get('global_context_count', 0)} global patterns")
+                else:
+                    print(f"⚠️ RAG context present but no combined_context_text found")
             
             # Check for dossier context (existing story data) - Updated for client requirements
             dossier_context = kwargs.get("dossier_context")
@@ -310,7 +311,7 @@ class AIModelManager:
         CONVERSATION CONTEXT:
         {self._build_conversation_context(kwargs.get("conversation_history", []), kwargs.get("image_context", ""))}
 
-        Be Ariel - warm, story-focused, and always building on what they share.{document_context}{dossier_info}"""
+        Be Ariel - warm, story-focused, and always building on what they share.{rag_context_text}{dossier_info}"""
 
             # Build messages with conversation history for context
             messages = [{"role": "system", "content": system_prompt}]
