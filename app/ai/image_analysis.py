@@ -4,9 +4,7 @@ Handles image analysis and description extraction for chat integration
 """
 
 import base64
-import io
 from typing import Optional, Dict, Any
-from PIL import Image
 import requests
 import os
 from dotenv import load_dotenv
@@ -20,6 +18,31 @@ class ImageAnalysisService:
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
         if not self.openai_api_key:
             raise ValueError("OpenAI API key not found in environment variables")
+    
+    def _detect_image_format(self, image_data: bytes) -> str:
+        """
+        Detect image format from file signature (magic bytes) - lightweight alternative to Pillow
+        Returns format string like 'jpeg', 'png', 'gif', 'webp', etc.
+        """
+        if not image_data:
+            return "jpeg"
+        
+        # Check file signatures (magic bytes)
+        if image_data.startswith(b'\xff\xd8\xff'):
+            return "jpeg"
+        elif image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+            return "png"
+        elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
+            return "gif"
+        elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:20]:
+            return "webp"
+        elif image_data.startswith(b'BM'):
+            return "bmp"
+        elif image_data.startswith(b'\x00\x00\x01\x00') or image_data.startswith(b'\x00\x00\x02\x00'):
+            return "ico"
+        else:
+            # Default to jpeg if format cannot be determined
+            return "jpeg"
     
     async def analyze_image(self, image_data: bytes, image_type: str = "character") -> Dict[str, Any]:
         """
@@ -36,16 +59,8 @@ class ImageAnalysisService:
             # Convert image to base64 for OpenAI API
             image_base64 = base64.b64encode(image_data).decode('utf-8')
             
-            # Determine image format for proper MIME type
-            image_format = "jpeg"  # Default
-            try:
-                from PIL import Image
-                import io
-                img = Image.open(io.BytesIO(image_data))
-                if img.format:
-                    image_format = img.format.lower()
-            except:
-                pass  # Use default if we can't determine format
+            # Determine image format using lightweight file signature detection
+            image_format = self._detect_image_format(image_data)
             
             # Determine analysis prompt based on image type
             analysis_prompt = self._get_analysis_prompt(image_type)
