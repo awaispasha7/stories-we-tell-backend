@@ -15,13 +15,10 @@ except Exception as e:
     DOCUMENT_PROCESSOR_AVAILABLE = False
     document_processor = None
 
-try:
-    from app.ai.image_analysis import image_analysis_service
-    IMAGE_ANALYSIS_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: Image analysis service not available: {e}")
-    IMAGE_ANALYSIS_AVAILABLE = False
-    image_analysis_service = None
+# Image analysis is now done during chat with full context (conversation history + RAG)
+# No need for upload-time analysis - it's redundant and less accurate
+IMAGE_ANALYSIS_AVAILABLE = False
+image_analysis_service = None
 
 router = APIRouter()
 load_dotenv()
@@ -224,54 +221,9 @@ async def upload_files(
                 
                 print(f"✅ File uploaded successfully: {file.filename}")
                 
-                # Analyze image if it's an image file
-                if file_type == 'image' and IMAGE_ANALYSIS_AVAILABLE and image_analysis_service:
-                    print(f"🖼️ Analyzing image: {file.filename}")
-                    try:
-                        # Determine image type based on context (for now, assume character)
-                        image_type = "character"  # Could be enhanced to detect based on filename or user input
-                        
-                        # Analyze the image
-                        analysis_result = await image_analysis_service.analyze_image(content, image_type)
-                        
-                        if analysis_result["success"]:
-                            # Update asset record with analysis
-                            update_data = {
-                                "analysis": analysis_result["description"],
-                                "analysis_type": image_type,
-                                "analysis_data": analysis_result["analysis"]
-                            }
-                            
-                            supabase.table("assets").update(update_data).eq("id", asset_id).execute()
-                            print(f"✅ Image analysis completed: {file.filename}")
-                            
-                            # Store image analysis in RAG using existing global_knowledge table
-                            try:
-                                from ..ai.vector_storage import store_global_knowledge
-                                
-                                # Create RAG-friendly content from image analysis
-                                rag_content = f"Image Analysis - {image_type.title()}: {analysis_result['description']}"
-                                
-                                # Store in global knowledge base using existing schema
-                                await store_global_knowledge(
-                                    content=rag_content,
-                                    metadata={
-                                        "type": "image_analysis",
-                                        "image_type": image_type,
-                                        "asset_id": asset_id,
-                                        "filename": file.filename,
-                                        "project_id": project_id,
-                                        "user_id": x_user_id
-                                    }
-                                )
-                                print(f"📚 Image analysis stored in RAG: {file.filename}")
-                            except Exception as rag_error:
-                                print(f"⚠️ Failed to store image analysis in RAG: {rag_error}")
-                        else:
-                            print(f"⚠️ Image analysis failed: {analysis_result.get('error', 'Unknown error')}")
-                            
-                    except Exception as e:
-                        print(f"❌ Error analyzing image {file.filename}: {str(e)}")
+                # Image analysis is now done during chat with full context (conversation history + RAG)
+                # This ensures better accuracy and context-aware analysis
+                # Analysis will be stored when user sends a message with the image attached
                 
                 # Process document for RAG if it's a text-based document
                 if file_type in ['document', 'script'] and file_extension in ['pdf', 'docx', 'doc', 'txt'] and DOCUMENT_PROCESSOR_AVAILABLE:
