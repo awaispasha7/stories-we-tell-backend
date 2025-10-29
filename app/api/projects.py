@@ -215,7 +215,7 @@ async def delete_project(
     x_user_id: Optional[str] = Header(None, alias="X-User-ID")
 ):
     """
-    Delete a project and all its sessions (cascade delete)
+    Delete a project and all its related data (cascade delete manually)
     """
     if not x_user_id:
         raise HTTPException(status_code=401, detail="User ID required - please authenticate")
@@ -234,12 +234,56 @@ async def delete_project(
     if not dossier_result.data:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Delete project (dossier) - cascade deletes sessions via foreign key
+    project_id_str = str(project_id)
+    
     try:
-        supabase.table("dossier").delete().eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
+        # Delete in order (respecting foreign key constraints):
+        # 1. Delete message embeddings (references project_id)
+        supabase.table("message_embeddings").delete().eq("project_id", project_id_str).execute()
+        print(f"🗑️ Deleted message embeddings for project: {project_id}")
+        
+        # 2. Delete document embeddings (references project_id)
+        supabase.table("document_embeddings").delete().eq("project_id", project_id_str).execute()
+        print(f"🗑️ Deleted document embeddings for project: {project_id}")
+        
+        # 3. Delete embedding queue entries (references project_id)
+        supabase.table("embedding_queue").delete().eq("project_id", project_id_str).execute()
+        print(f"🗑️ Deleted embedding queue entries for project: {project_id}")
+        
+        # 4. Get all sessions for this project first
+        sessions_result = supabase.table("sessions").select("session_id").eq("project_id", project_id_str).execute()
+        session_ids = [session["session_id"] for session in sessions_result.data] if sessions_result.data else []
+        
+        # 5. Delete chat messages for all sessions (references session_id)
+        for session_id in session_ids:
+            supabase.table("chat_messages").delete().eq("session_id", session_id).execute()
+        print(f"🗑️ Deleted chat messages for {len(session_ids)} sessions")
+        
+        # 6. Delete turns for all sessions (references session_id)
+        for session_id in session_ids:
+            supabase.table("turns").delete().eq("session_id", session_id).execute()
+        print(f"🗑️ Deleted turns for {len(session_ids)} sessions")
+        
+        # 7. Delete sessions (references project_id)
+        supabase.table("sessions").delete().eq("project_id", project_id_str).execute()
+        print(f"🗑️ Deleted {len(session_ids)} sessions for project: {project_id}")
+        
+        # 8. Delete assets (references project_id)
+        supabase.table("assets").delete().eq("project_id", project_id_str).execute()
+        print(f"🗑️ Deleted assets for project: {project_id}")
+        
+        # 9. Delete user_projects junction table entry (references project_id)
+        supabase.table("user_projects").delete().eq("project_id", project_id_str).eq("user_id", str(user_id)).execute()
+        print(f"🗑️ Deleted user_projects entry for project: {project_id}")
+        
+        # 10. Finally, delete the dossier (project) itself
+        supabase.table("dossier").delete().eq("project_id", project_id_str).eq("user_id", str(user_id)).execute()
         print(f"✅ Deleted project: {project_id} for user: {user_id}")
-        return {"message": "Project deleted successfully"}
+        
+        return {"message": "Project deleted successfully", "sessions_deleted": len(session_ids)}
     except Exception as e:
         print(f"❌ Error deleting project: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
 
