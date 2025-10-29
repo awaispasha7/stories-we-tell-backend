@@ -3,7 +3,7 @@ Simplified Session Manager
 Clean, single-system approach for session management
 """
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Body
 from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime, timezone, timedelta
@@ -389,9 +389,9 @@ class SimpleSessionManager:
 # API Endpoints
 @router.post("/session")
 async def get_or_create_session(
-    session_id: Optional[str] = None,
+    session_id: Optional[str] = Body(None),
     user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    project_id: Optional[str] = None
+    project_id: Optional[str] = Body(None)
 ):
     """Get or create a session - works for both authenticated and anonymous users"""
     try:
