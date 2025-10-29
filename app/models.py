@@ -70,6 +70,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[UUID] = None  # If provided, continue existing session
     project_id: Optional[UUID] = None  # If provided, create new session
     attached_files: Optional[List[Dict[str, Any]]] = None  # Attached files with metadata
+    edit_from_message_id: Optional[UUID] = None  # If provided, delete this message and all subsequent messages before creating new message
 
 class ChatResponse(BaseModel):
     reply: str

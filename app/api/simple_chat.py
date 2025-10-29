@@ -65,6 +65,44 @@ async def chat(
         
         print(f"Chat request - Session: {session_id}, User: {user_id}, Authenticated: {is_authenticated}")
         
+        # Handle message editing: delete messages from edit point onwards
+        if chat_request.edit_from_message_id:
+            print(f"✏️ [EDIT] Deleting messages from {chat_request.edit_from_message_id} onwards")
+            try:
+                supabase = get_supabase_client()
+                if supabase:
+                    # Get the message to find its timestamp
+                    message_result = supabase.table("chat_messages").select("created_at").eq("message_id", str(chat_request.edit_from_message_id)).eq("session_id", str(session_id)).execute()
+                    
+                    if message_result.data:
+                        edit_message_time = message_result.data[0]["created_at"]
+                        
+                        # First, delete the exact message being edited
+                        supabase.table("chat_messages").delete().eq("message_id", str(chat_request.edit_from_message_id)).eq("session_id", str(session_id)).execute()
+                        print(f"✏️ [EDIT] Deleted message {chat_request.edit_from_message_id}")
+                        
+                        # Then, delete all messages created after this timestamp
+                        messages_after = supabase.table("chat_messages").select("message_id").eq("session_id", str(session_id)).gt("created_at", edit_message_time).execute()
+                        
+                        if messages_after.data:
+                            message_ids_after = [msg["message_id"] for msg in messages_after.data]
+                            print(f"✏️ [EDIT] Found {len(message_ids_after)} subsequent messages to delete: {message_ids_after}")
+                            
+                            # Delete subsequent messages
+                            supabase.table("chat_messages").delete().eq("session_id", str(session_id)).gt("created_at", edit_message_time).execute()
+                            print(f"✏️ [EDIT] Deleted {len(message_ids_after)} subsequent messages")
+                        else:
+                            print(f"✏️ [EDIT] No subsequent messages found to delete")
+                        
+                        # TODO: Delete RAG embeddings for these messages (requires adding delete_message_embedding method to RAG service)
+                    else:
+                        print(f"⚠️ [EDIT] Message {chat_request.edit_from_message_id} not found in session {session_id}")
+            except Exception as e:
+                print(f"❌ [EDIT] Error deleting messages: {e}")
+                import traceback
+                print(traceback.format_exc())
+                # Continue with creating new message even if deletion fails
+        
         # Save user message
         user_message_id = await _save_message(
             session_id=str(session_id),
