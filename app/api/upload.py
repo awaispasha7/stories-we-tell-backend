@@ -118,25 +118,50 @@ async def upload_files(
                 if not x_user_id:
                     # For anonymous users, create signed URL with long expiration
                     try:
+                        print(f"🔐 Creating signed URL for anonymous user...")
                         signed_url_response = supabase.storage.from_(bucket_name).create_signed_url(
                             path=unique_filename,
                             expires_in=31536000  # 1 year in seconds
                         )
+                        
+                        # Debug: Print the full response to understand its structure
+                        print(f"🔍 Signed URL response type: {type(signed_url_response)}")
+                        print(f"🔍 Signed URL response: {signed_url_response}")
+                        
                         # Handle different response formats from Supabase client
+                        # The Supabase Python client typically returns a dict with 'signedURL' key
                         if isinstance(signed_url_response, dict):
                             public_url = signed_url_response.get('signedURL') or signed_url_response.get('signedUrl') or signed_url_response.get('url', '')
+                            # If still no URL, check if it's a StorageApiResponse object
+                            if not public_url and hasattr(signed_url_response, 'data'):
+                                public_url = signed_url_response.data.get('signedURL') or signed_url_response.data.get('signedUrl') or signed_url_response.data.get('url', '')
                         elif isinstance(signed_url_response, str):
                             public_url = signed_url_response
+                        elif hasattr(signed_url_response, 'signedURL'):
+                            public_url = signed_url_response.signedURL
+                        elif hasattr(signed_url_response, 'signedUrl'):
+                            public_url = signed_url_response.signedUrl
                         else:
                             # Fallback: try to get public URL
                             public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
                             print(f"⚠️ Could not parse signed URL response, using public URL instead")
-                        print(f"🔗 Signed URL (anonymous user): {public_url}")
+                        
+                        if not public_url or public_url == '':
+                            raise ValueError("Signed URL is empty after parsing")
+                            
+                        print(f"✅ Signed URL (anonymous user): {public_url}")
                     except Exception as url_error:
-                        print(f"⚠️ Error creating signed URL: {url_error}")
+                        print(f"❌ Error creating signed URL: {url_error}")
+                        print(f"❌ Error type: {type(url_error)}")
+                        import traceback
+                        print(f"❌ Traceback: {traceback.format_exc()}")
                         # Fallback to public URL if signed URL fails
-                        public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
-                        print(f"🔗 Fallback to public URL: {public_url}")
+                        try:
+                            public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
+                            print(f"⚠️ Fallback to public URL: {public_url}")
+                        except Exception as fallback_error:
+                            print(f"❌ Fallback also failed: {fallback_error}")
+                            raise HTTPException(status_code=500, detail=f"Failed to generate file URL: {str(url_error)}")
                 else:
                     # For authenticated users, use public URL
                     public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
