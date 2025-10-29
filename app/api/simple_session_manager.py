@@ -395,8 +395,21 @@ async def get_or_create_session(
 ):
     """Get or create a session - works for both authenticated and anonymous users"""
     try:
-        parsed_user_id = UUID(user_id) if user_id else None
-        parsed_project_id = UUID(project_id) if project_id else None
+        parsed_user_id = None
+        if user_id:
+            try:
+                parsed_user_id = UUID(user_id)
+            except (ValueError, TypeError) as e:
+                print(f"Invalid user_id format: {user_id} - {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid user_id format: {user_id}")
+        
+        parsed_project_id = None
+        if project_id:
+            try:
+                parsed_project_id = UUID(project_id)
+            except (ValueError, TypeError) as e:
+                print(f"Invalid project_id format: {project_id} - {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid project_id format: {project_id}")
         
         result = await SimpleSessionManager.get_or_create_session(
             session_id=session_id,
@@ -416,9 +429,15 @@ async def get_or_create_session(
         
         return response_data
         
+    except HTTPException:
+        # Re-raise HTTPExceptions (400, 404, etc.)
+        raise
     except Exception as e:
-        print(f"Error in get_or_create_session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Error in get_or_create_session: {e}")
+        print(f"❌ Traceback: {error_trace}")
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 
 @router.post("/migrate-session")
 async def migrate_anonymous_session(
