@@ -100,8 +100,14 @@ class SimpleSessionManager:
         new_session_id = str(uuid4())
         new_project_id = project_id  # Use provided project_id (required)
         
-        # Ensure dossier exists for the project (should already exist, but double-check)
-        await SimpleSessionManager._ensure_dossier_exists(new_project_id, str(user_id))
+        # For authenticated users, dossier MUST already exist (created via projects API)
+        # Don't auto-create it - if it doesn't exist, that's an error
+        dossier_check = supabase.table("dossier").select("*").eq("project_id", str(new_project_id)).execute()
+        if not dossier_check.data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project dossier not found. Project must be created via /api/v1/projects first."
+            )
         
         session_data = {
             "session_id": new_session_id,
@@ -156,8 +162,28 @@ class SimpleSessionManager:
                 # Session expired, create new one
                 return await SimpleSessionManager._create_new_anonymous_session(project_id)
         
-        # Ensure dossier exists for existing session
-        await SimpleSessionManager._ensure_dossier_exists(UUID(session["project_id"]), user_id)
+        # For anonymous users, ensure dossier exists (can auto-create with proper title)
+        # For authenticated users, dossier should already exist
+        if user["email"].startswith("anonymous_"):
+            dossier_check = supabase.table("dossier").select("*").eq("project_id", str(session["project_id"])).execute()
+            if not dossier_check.data:
+                dossier_data = {
+                    "project_id": str(session["project_id"]),
+                    "user_id": user_id,
+                    "snapshot_json": {
+                        "title": "Demo Story",
+                        "logline": "",
+                        "genre": "",
+                        "tone": "",
+                        "characters": [],
+                        "scenes": [],
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    },
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                supabase.table("dossier").insert(dossier_data).execute()
+                print(f"Created dossier for anonymous project {session['project_id']}")
         
         return {
             "session_id": session_id,
@@ -191,8 +217,26 @@ class SimpleSessionManager:
         session_id = str(uuid4())
         new_project_id = project_id or uuid4()
         
-        # Ensure dossier exists for the project
-        await SimpleSessionManager._ensure_dossier_exists(new_project_id, str(temp_user_id))
+        # For anonymous users, ensure dossier exists with proper title (not "Untitled Project")
+        dossier_check = supabase.table("dossier").select("*").eq("project_id", str(new_project_id)).execute()
+        if not dossier_check.data:
+            dossier_data = {
+                "project_id": str(new_project_id),
+                "user_id": str(temp_user_id),
+                "snapshot_json": {
+                    "title": "Demo Story",
+                    "logline": "",
+                    "genre": "",
+                    "tone": "",
+                    "characters": [],
+                    "scenes": [],
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                },
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            supabase.table("dossier").insert(dossier_data).execute()
+            print(f"Created dossier for anonymous project {new_project_id}")
         
         session_data = {
             "session_id": session_id,
@@ -310,18 +354,32 @@ class SimpleSessionManager:
     
     @staticmethod
     async def _ensure_dossier_exists(project_id: UUID, user_id: str):
-        """Ensure a dossier exists for the given project_id and user_id"""
+        """
+        DEPRECATED: This method should not be used for authenticated users.
+        For authenticated users, projects MUST be created via /api/v1/projects.
+        This method only exists for backward compatibility with anonymous users.
+        """
         supabase = get_supabase_client()
         
         # Check if dossier already exists
         dossier_result = supabase.table("dossier").select("*").eq("project_id", str(project_id)).execute()
         
         if not dossier_result.data:
-            # Create dossier
+            # Only create for anonymous users - authenticated users must use projects API
+            # Note: This should rarely be called now as we handle dossier creation explicitly
+            print(f"⚠️ WARNING: _ensure_dossier_exists called - this should not create projects for authenticated users")
             dossier_data = {
                 "project_id": str(project_id),
-                "user_id": str(user_id),  # Ensure user_id is also converted to string
-                "snapshot_json": {},
+                "user_id": str(user_id),
+                "snapshot_json": {
+                    "title": "Demo Story",
+                    "logline": "",
+                    "genre": "",
+                    "tone": "",
+                    "characters": [],
+                    "scenes": [],
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                },
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }

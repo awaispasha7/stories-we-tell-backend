@@ -170,25 +170,25 @@ async def upload_files(
                     project_id = x_project_id
                     print(f"✅ Using real project ID: {project_id}")
                     
-                    # Check if project exists in dossier table, create if not
+                    # CRITICAL: Don't auto-create projects - they must be created via /api/v1/projects
+                    # Check if project exists - if not, return an error
                     try:
                         project_check = supabase.table('dossier').select('project_id').eq('project_id', project_id).execute()
                         if not project_check.data:
-                            print(f"📝 Creating project record for: {project_id}")
-                            # Create a basic project record
-                            project_record = {
-                                "project_id": project_id,
-                                "user_id": "00000000-0000-0000-0000-000000000001",  # Test user ID
-                                "snapshot_json": {"title": "Auto-created Project", "description": "Project created automatically for document upload"},
-                                "created_at": "now()"
-                            }
-                            supabase.table('dossier').insert(project_record).execute()
-                            print(f"✅ Project record created successfully")
+                            print(f"❌ Project {project_id} not found in dossier")
+                            raise HTTPException(
+                                status_code=404,
+                                detail=f"Project not found. Please create the project first via /api/v1/projects"
+                            )
+                        print(f"✅ Project {project_id} verified")
+                    except HTTPException:
+                        raise  # Re-raise HTTP exceptions
                     except Exception as e:
-                        print(f"⚠️ Could not create project record: {e}")
-                        # Fall back to test project ID
-                        project_id = "00000000-0000-0000-0000-000000000002"
-                        print(f"⚠️ Falling back to test project ID: {project_id}")
+                        print(f"⚠️ Error checking project: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to verify project: {str(e)}"
+                        )
                 else:
                     project_id = "00000000-0000-0000-0000-000000000002"  # Test project ID
                     print(f"⚠️ Using test project ID: {project_id}")
