@@ -113,10 +113,34 @@ async def upload_files(
                 
                 print(f"✅ Upload response: {storage_response}")
                 
-                # Get public URL
-                public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
-                
-                print(f"🔗 Public URL: {public_url}")
+                # Get URL - use signed URL for anonymous users, public URL for authenticated users
+                # Signed URLs are valid for 1 year (31536000 seconds) to ensure they don't expire
+                if not x_user_id:
+                    # For anonymous users, create signed URL with long expiration
+                    try:
+                        signed_url_response = supabase.storage.from_(bucket_name).create_signed_url(
+                            path=unique_filename,
+                            expires_in=31536000  # 1 year in seconds
+                        )
+                        # Handle different response formats from Supabase client
+                        if isinstance(signed_url_response, dict):
+                            public_url = signed_url_response.get('signedURL') or signed_url_response.get('signedUrl') or signed_url_response.get('url', '')
+                        elif isinstance(signed_url_response, str):
+                            public_url = signed_url_response
+                        else:
+                            # Fallback: try to get public URL
+                            public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
+                            print(f"⚠️ Could not parse signed URL response, using public URL instead")
+                        print(f"🔗 Signed URL (anonymous user): {public_url}")
+                    except Exception as url_error:
+                        print(f"⚠️ Error creating signed URL: {url_error}")
+                        # Fallback to public URL if signed URL fails
+                        public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
+                        print(f"🔗 Fallback to public URL: {public_url}")
+                else:
+                    # For authenticated users, use public URL
+                    public_url = supabase.storage.from_(bucket_name).get_public_url(unique_filename)
+                    print(f"🔗 Public URL (authenticated user): {public_url}")
                 
                 # Store metadata in assets table
                 # Use real session data if available, otherwise fall back to test IDs
