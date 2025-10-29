@@ -297,6 +297,16 @@ class AIModelManager:
         - If actions_taken is Unknown → Ask "What does [character] do to solve this?"
         - If outcome is Unknown → Ask "How does the story end?"
 
+        ATTACHMENT ANALYSIS GUIDELINES:
+        - When the user shares images or attachments, ALWAYS provide detailed visual analysis
+        - Your analysis will be stored for future reference, so be thorough and specific
+        - Focus on all relevant visual details: appearance, expression, setting, atmosphere, mood, composition
+        - Consider the user's message as guidance - if they say "this is my character", analyze character details
+        - If they say "this is where the story takes place", focus on location/setting details
+        - Incorporate the visual details you observe naturally into your conversational response
+        - Mention specific visual elements (e.g., "I can see [character name] has [description]")
+        - Use conversation history to provide context-aware analysis (e.g., if character was mentioned before)
+
         CONVERSATION CONTEXT:
         {self._build_conversation_context(kwargs.get("conversation_history", []), kwargs.get("image_context", ""))}
 
@@ -313,19 +323,63 @@ class AIModelManager:
                 messages.extend(recent_history)
                 print(f"📚 Using {len(recent_history)} messages from history for context")
             
-            # Add current user message with image context if available
-            image_context = kwargs.get("image_context", "")
-            if image_context:
-                # Include image context prominently with the user message
-                user_message = f"{prompt}\n\n{image_context}"
-                print(f"🖼️ [AI] Including image context in user message ({len(image_context)} chars)")
-            else:
-                user_message = prompt
+            # Check if images are provided for direct sending (ChatGPT-style)
+            image_data_list = kwargs.get("image_data", [])  # List of {"data": bytes, "mime_type": str, "filename": str}
             
-            messages.append({"role": "user", "content": user_message})
+            # Build user message content (ChatGPT-style content array)
+            if image_data_list:
+                # ChatGPT-style: Send images directly to model
+                user_content = [{"type": "text", "text": prompt}]
+                
+                for img_data in image_data_list:
+                    image_bytes = img_data.get("data")
+                    mime_type = img_data.get("mime_type", "image/png")
+                    filename = img_data.get("filename", "image.png")
+                    
+                    if image_bytes:
+                        import base64
+                        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                        user_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            }
+                        })
+                        print(f"🖼️ [AI] Added image to message: {filename} ({len(image_bytes)} bytes, {mime_type})")
+                
+                messages.append({"role": "user", "content": user_content})
+                print(f"✅ [AI] User message contains {len(image_data_list)} image(s) - using GPT-4o for vision")
+            else:
+                # Fallback: Use text description if provided (for backward compatibility)
+                image_context = kwargs.get("image_context", "")
+                if image_context:
+                    user_message = f"{prompt}\n\n{image_context}"
+                    print(f"🖼️ [AI] Using text description fallback ({len(image_context)} chars)")
+                else:
+                    user_message = prompt
+                    print(f"ℹ️ [AI] No image data or context available")
+                
+                messages.append({"role": "user", "content": user_message})
+            
+            # Log message details
+            print(f"📋 [AI] Total messages: {len(messages)}")
+            if image_data_list:
+                print(f"📋 [AI] User message has {len(image_data_list)} image(s) - will use GPT-4o")
+            else:
+                last_msg = messages[-1]
+                if isinstance(last_msg.get("content"), list):
+                    print(f"📋 [AI] User message is content array with {len(last_msg['content'])} items")
+                else:
+                    print(f"📋 [AI] User message length: {len(str(last_msg.get('content', '')))} chars")
+
+            # Select model based on whether images are present
+            # GPT-4o has vision capabilities, GPT-4o-mini is cheaper for text-only
+            model_name = "gpt-4o" if image_data_list else "gpt-4o-mini"
+            
+            print(f"🤖 [AI] Selected model: {model_name} ({'vision-capable' if image_data_list else 'text-only'})")
 
             response = openai.chat.completions.create(
-                model="gpt-4.1-mini",  # Best price-to-quality for high-traffic chat with ~1M token context
+                model=model_name,  # Use GPT-4o for vision, GPT-4o-mini for text-only
                 messages=messages,
                 max_completion_tokens=kwargs.get("max_tokens", 200),  # Optimized for chat responses
                 temperature=0.7,
@@ -340,7 +394,7 @@ class AIModelManager:
 
             return {
                 "response": response.choices[0].message.content,
-                "model_used": "gpt-4.1-mini",
+                "model_used": model_name,
                 "tokens_used": response.usage.total_tokens if response.usage else 0
             }
         except Exception as e:

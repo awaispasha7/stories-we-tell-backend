@@ -144,80 +144,114 @@ async def chat(
         # Get conversation history for context (moved outside generate_stream to fix scope issue)
         conversation_history = await _get_conversation_history(str(session_id), str(user_id))
         
-        # Process attached image files for analysis
-        image_context = ""
-        if chat_request.attached_files:
-            print(f"🖼️ [IMAGE ANALYSIS] Processing {len(chat_request.attached_files)} attached files for analysis")
-            print(f"🖼️ [IMAGE ANALYSIS] Attached files: {[{'name': f.get('name'), 'type': f.get('type'), 'url': f.get('url')[:50] + '...' if f.get('url') else None} for f in chat_request.attached_files]}")
-            try:
-                from ..ai.image_analysis import image_analysis_service
-                if image_analysis_service:
-                    print(f"✅ [IMAGE ANALYSIS] Image analysis service available")
-                    for idx, attached_file in enumerate(chat_request.attached_files):
-                        file_type = attached_file.get("type", "unknown")
-                        file_name = attached_file.get("name", "unknown")
-                        file_url = attached_file.get("url", "")
-                        
-                        print(f"🖼️ [IMAGE ANALYSIS] Processing file {idx + 1}/{len(chat_request.attached_files)}: {file_name} (type: {file_type})")
-                        
-                        if file_type == "image" or file_type == "image/png" or file_type == "image/jpeg" or file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                            print(f"🖼️ [IMAGE ANALYSIS] Detected image file: {file_name}")
-                            print(f"🖼️ [IMAGE ANALYSIS] Image URL: {file_url[:100]}...")
-                            
-                            try:
-                                import requests
-                                print(f"🖼️ [IMAGE ANALYSIS] Downloading image from URL...")
-                                response = requests.get(file_url, timeout=30)
-                                
-                                print(f"🖼️ [IMAGE ANALYSIS] Download response status: {response.status_code}")
-                                print(f"🖼️ [IMAGE ANALYSIS] Download response size: {len(response.content)} bytes")
-                                
-                                if response.status_code == 200:
-                                    image_data = response.content
-                                    print(f"🖼️ [IMAGE ANALYSIS] Image downloaded successfully, analyzing...")
-                                    
-                                    analysis_result = await image_analysis_service.analyze_image(image_data, "character")
-                                    
-                                    print(f"🖼️ [IMAGE ANALYSIS] Analysis result: success={analysis_result.get('success')}")
-                                    
-                                    if analysis_result["success"]:
-                                        description = analysis_result.get('description', 'No description')
-                                        print(f"✅ [IMAGE ANALYSIS] Image analysis completed for {file_name}")
-                                        print(f"📝 [IMAGE ANALYSIS] Captured description: {description[:200]}...")
-                                        
-                                        image_context += f"\n\nImage Analysis ({file_name}): {description}"
-                                        print(f"✅ [IMAGE ANALYSIS] Image context added to prompt")
-                                    else:
-                                        error_msg = analysis_result.get('error', 'Unknown error')
-                                        print(f"❌ [IMAGE ANALYSIS] Image analysis failed for {file_name}: {error_msg}")
-                                else:
-                                    print(f"❌ [IMAGE ANALYSIS] Failed to download image {file_name}: HTTP {response.status_code}")
-                            except Exception as e:
-                                import traceback
-                                print(f"❌ [IMAGE ANALYSIS] Error processing image {file_name}: {str(e)}")
-                                print(f"❌ [IMAGE ANALYSIS] Traceback: {traceback.format_exc()}")
-                        else:
-                            print(f"⏭️ [IMAGE ANALYSIS] Skipping non-image file: {file_name} (type: {file_type})")
-                    
-                    print(f"🖼️ [IMAGE ANALYSIS] Final image context length: {len(image_context)} characters")
-                    if image_context:
-                        print(f"📝 [IMAGE ANALYSIS] Final image context preview: {image_context[:300]}...")
-                    else:
-                        print(f"⚠️ [IMAGE ANALYSIS] No image context generated")
-                else:
-                    print(f"⚠️ [IMAGE ANALYSIS] Image analysis service not available, skipping {len(chat_request.attached_files)} attached files")
-            except Exception as e:
-                import traceback
-                print(f"❌ [IMAGE ANALYSIS] Error importing image analysis service: {e}")
-                print(f"❌ [IMAGE ANALYSIS] Traceback: {traceback.format_exc()}")
-        else:
-            print(f"ℹ️ [IMAGE ANALYSIS] No attached files in request")
+        # Process attached image files for DIRECT sending to model (ChatGPT-style)
+        image_data_list = []  # List of {"data": bytes, "mime_type": str, "filename": str}
         
-        # Log image context status before generating response
-        if image_context:
-            print(f"✅ [IMAGE ANALYSIS] Image context will be included in AI prompt: {len(image_context)} characters")
+        if chat_request.attached_files:
+            print(f"🖼️ [IMAGE] Processing {len(chat_request.attached_files)} attached files for direct model sending")
+            print(f"🖼️ [IMAGE] Attached files: {[{'name': f.get('name'), 'type': f.get('type'), 'url': f.get('url')[:50] + '...' if f.get('url') else None} for f in chat_request.attached_files]}")
+            
+            import requests
+            
+            for idx, attached_file in enumerate(chat_request.attached_files):
+                file_type = attached_file.get("type", "unknown")
+                file_name = attached_file.get("name", "unknown")
+                file_url = attached_file.get("url", "")
+                
+                print(f"🖼️ [IMAGE] Processing file {idx + 1}/{len(chat_request.attached_files)}: {file_name} (type: {file_type})")
+                
+                # Check if it's an image file
+                is_image = (
+                    file_type == "image" or 
+                    file_type.startswith("image/") or 
+                    file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
+                )
+                
+                if is_image:
+                    print(f"🖼️ [IMAGE] Detected image file: {file_name}")
+                    print(f"🖼️ [IMAGE] Image URL: {file_url[:100]}...")
+                    
+                    try:
+                        print(f"🖼️ [IMAGE] Downloading image from URL...")
+                        response = requests.get(file_url, timeout=30)
+                        
+                        print(f"🖼️ [IMAGE] Download response status: {response.status_code}")
+                        print(f"🖼️ [IMAGE] Download response size: {len(response.content)} bytes")
+                        
+                        if response.status_code == 200:
+                            image_bytes = response.content
+                            
+                            # Determine MIME type from file extension or Content-Type
+                            mime_type = file_type if file_type.startswith("image/") else "image/png"
+                            if file_name.lower().endswith('.jpg') or file_name.lower().endswith('.jpeg'):
+                                mime_type = "image/jpeg"
+                            elif file_name.lower().endswith('.png'):
+                                mime_type = "image/png"
+                            elif file_name.lower().endswith('.gif'):
+                                mime_type = "image/gif"
+                            elif file_name.lower().endswith('.webp'):
+                                mime_type = "image/webp"
+                            
+                            image_data_list.append({
+                                "data": image_bytes,
+                                "mime_type": mime_type,
+                                "filename": file_name
+                            })
+                            
+                            print(f"✅ [IMAGE] Image downloaded and prepared for direct model sending: {file_name} ({len(image_bytes)} bytes, {mime_type})")
+                        else:
+                            print(f"❌ [IMAGE] Failed to download image {file_name}: HTTP {response.status_code}")
+                    except Exception as e:
+                        import traceback
+                        print(f"❌ [IMAGE] Error downloading image {file_name}: {str(e)}")
+                        print(f"❌ [IMAGE] Traceback: {traceback.format_exc()}")
+                else:
+                    print(f"⏭️ [IMAGE] Skipping non-image file: {file_name} (type: {file_type})")
+            
+            print(f"🖼️ [IMAGE] Prepared {len(image_data_list)} image(s) for direct model sending")
         else:
-            print(f"ℹ️ [IMAGE ANALYSIS] No image context to include in AI prompt")
+            print(f"ℹ️ [IMAGE] No attached files in request")
+        
+        # Prepare image-to-asset mapping for later storage
+        # attached_files should have asset_id if the file was uploaded through our system
+        image_asset_mapping = {}  # {filename: asset_id}
+        if chat_request.attached_files:
+            for attached_file in chat_request.attached_files:
+                asset_id = attached_file.get("asset_id")
+                filename = attached_file.get("name", "unknown")
+                if asset_id:
+                    image_asset_mapping[filename] = asset_id
+                    print(f"📎 [ASSET] Mapping image {filename} to asset {asset_id}")
+        
+        # Prepare attachment metadata for post-processing
+        # We'll extract analysis from the model's response (single call approach)
+        attachment_metadata = {}  # {filename: {"file_type": str, "asset_id": str}}
+        
+        if chat_request.attached_files:
+            for attached_file in chat_request.attached_files:
+                filename = attached_file.get("name", "unknown")
+                file_type = attached_file.get("type", "unknown")
+                asset_id = image_asset_mapping.get(filename)
+                
+                # Check if it's an image
+                img_data = next((img for img in image_data_list if img.get("filename") == filename), None)
+                
+                if img_data and img_data.get("data"):
+                    attachment_metadata[filename] = {
+                        "file_type": "image",
+                        "asset_id": asset_id
+                    }
+                elif file_type and ("document" in file_type.lower() or filename.lower().endswith(('.pdf', '.docx', '.txt', '.doc'))):
+                    attachment_metadata[filename] = {
+                        "file_type": "document",
+                        "asset_id": asset_id
+                    }
+                    print(f"ℹ️ [ATTACHMENT] Document {filename} already processed during upload")
+                else:
+                    attachment_metadata[filename] = {
+                        "file_type": file_type,
+                        "asset_id": asset_id
+                    }
         
         # Generate and stream AI response
         async def generate_stream():
@@ -263,16 +297,34 @@ async def chat(
                             print(f"⚠️ RAG context error: {e}")
                             rag_context = None
                     
+                    # Enhance user prompt when images are present to ensure detailed analysis
+                    # Model will see images + conversation history + RAG context in single call
+                    enhanced_prompt = chat_request.text
+                    
+                    if image_data_list:
+                        # Add guidance to ensure detailed visual analysis while staying conversational
+                        if enhanced_prompt:
+                            # User provided context - model should analyze according to their guidance
+                            enhanced_prompt = f"{enhanced_prompt}\n\n[Note: Please provide detailed visual analysis of the attached image(s) in your response, describing all relevant visual elements, appearance, and details that relate to the story.]"
+                        else:
+                            # No user text - request comprehensive analysis
+                            enhanced_prompt = "Please analyze the attached image(s) in detail and provide comprehensive information about all visual elements relevant to storytelling and story development."
+                    
+                    print(f"📝 [PROMPT] Enhanced prompt (length: {len(enhanced_prompt)} chars)")
+                    if image_data_list:
+                        print(f"🖼️ [PROMPT] Images included in single model call with full context")
+                    
                     # Use AI manager for response generation with RAG and dossier context
+                    # SINGLE CALL: Images + conversation history + RAG context all together
                     ai_response = await ai_manager.generate_response(
                         task_type=TaskType.CHAT,
-                        prompt=chat_request.text,
-                        conversation_history=conversation_history,
+                        prompt=enhanced_prompt,
+                        conversation_history=conversation_history,  # Full conversation history
                         user_id=user_id,
                         project_id=project_id,
-                        rag_context=rag_context,
+                        rag_context=rag_context,  # RAG context from documents
                         dossier_context=dossier_context,
-                        image_context=image_context
+                        image_data=image_data_list  # Images sent directly (ChatGPT-style)
                     )
                     
                     # Get the response content
@@ -301,6 +353,20 @@ async def chat(
                         content=full_response,
                         metadata={"is_authenticated": is_authenticated}
                     )
+                    
+                    # Extract and store attachment analysis from model's response
+                    # Model sees images directly + conversation history + RAG context in single call
+                    # Extract image analysis from the natural response
+                    if image_data_list and attachment_metadata:
+                        await _extract_and_store_attachment_analysis_from_response(
+                            full_response=full_response,
+                            image_data_list=image_data_list,
+                            attachment_metadata=attachment_metadata,
+                            conversation_history=conversation_history,
+                            rag_context=rag_context,
+                            project_id=project_id,
+                            user_id=user_id
+                        )
                     
                     # Update dossier if needed (after both user and assistant messages are saved)
                     if dossier_extractor and project_id and len(conversation_history) >= 2:
@@ -479,6 +545,131 @@ async def chat(
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+async def _extract_and_store_attachment_analysis_from_response(
+    full_response: str,
+    image_data_list: List[Dict],
+    attachment_metadata: Dict[str, Dict[str, str]],  # {filename: {"file_type": str, "asset_id": str}}
+    conversation_history: List[Dict],
+    rag_context: Optional[Dict],
+    project_id: str,
+    user_id: str
+):
+    """
+    Extract attachment analysis from model's single response.
+    Model has full context: images + conversation history + RAG context.
+    Extracts visual/attachment analysis and stores it for RAG.
+    """
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            print("⚠️ [ATTACHMENT ANALYSIS] Supabase not available, skipping storage")
+            return
+        
+        # For each image attachment, extract analysis from the response
+        for img_data in image_data_list:
+            filename = img_data.get("filename", "unknown")
+            metadata = attachment_metadata.get(filename)
+            
+            if not metadata:
+                continue
+            
+            asset_id = metadata.get("asset_id")
+            file_type = metadata.get("file_type", "image")
+            
+            if not asset_id:
+                print(f"⚠️ [ATTACHMENT ANALYSIS] No asset_id found for {filename}, skipping")
+                continue
+            
+            # Use the model's response as the analysis
+            # The response contains visual details since model saw the image with full context
+            # Combine response with conversation context for richer analysis
+            analysis_text = full_response
+            
+            # Enhance analysis with context if available
+            if conversation_history:
+                recent_context = " | ".join([
+                    f"{msg.get('role', 'unknown')}: {msg.get('content', '')[:50]}"
+                    for msg in conversation_history[-3:]
+                ])
+                analysis_text = f"Context: {recent_context}\n\nAnalysis: {full_response}"
+            
+            if not analysis_text:
+                print(f"⚠️ [ATTACHMENT ANALYSIS] Empty response for {filename}, skipping")
+                continue
+            
+            # Store in assets table (generic for all file types)
+            update_data = {
+                "analysis": analysis_text,
+                "analysis_type": file_type,  # Use file_type instead of hardcoded type
+                "analysis_data": {
+                    "extracted_from": "gpt4o_analysis" if file_type == "image" else "document_processor",
+                    "filename": filename,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "file_type": file_type
+                }
+            }
+            
+            try:
+                supabase.table("assets").update(update_data).eq("id", asset_id).execute()
+                print(f"✅ [ATTACHMENT ANALYSIS] Stored analysis for asset {asset_id} ({filename}, type: {file_type})")
+                
+                # Create embedding for RAG storage (only for images - documents already embedded during upload)
+                if file_type == "image":
+                    try:
+                        from ..ai.document_processor import document_processor
+                        from ..ai.embedding_service import get_embedding_service
+                        
+                        if document_processor and hasattr(document_processor, 'vector_storage'):
+                            # Use GPT-4o's analysis text for embedding
+                            # This text contains rich semantic information guided by user's prompt
+                            embedding_text = f"Attachment Analysis ({filename}): {analysis_text}"
+                            
+                            # Generate OpenAI text embedding from GPT-4o's analysis
+                            embedding_service = get_embedding_service()
+                            if embedding_service:
+                                embedding = await embedding_service.generate_query_embedding(embedding_text)
+                                
+                                if embedding:
+                                    # Store using document processor's vector storage
+                                    await document_processor.vector_storage.store_document_embedding(
+                                        asset_id=UUID(asset_id),
+                                        user_id=UUID(user_id),
+                                        project_id=UUID(project_id) if project_id else None,
+                                        document_type=file_type,  # Generic: "image", "document", etc.
+                                        chunk_index=0,
+                                        chunk_text=embedding_text,
+                                        embedding=embedding,  # OpenAI embedding (1536 dims)
+                                        metadata={
+                                            "filename": filename,
+                                            "file_type": file_type,
+                                            "embedding_model": "text-embedding-3-small",
+                                            "analysis": analysis_text
+                                        }
+                                    )
+                                    print(f"✅ [RAG] Created embedding for {file_type} analysis: {filename}")
+                                else:
+                                    print(f"⚠️ [RAG] Failed to generate embedding for {filename}")
+                            else:
+                                print(f"⚠️ [RAG] Embedding service not available")
+                        else:
+                            print(f"⚠️ [RAG] Document processor vector storage not available")
+                    except Exception as e:
+                        print(f"⚠️ [RAG] Failed to create embedding for {filename}: {e}")
+                        import traceback
+                        print(traceback.format_exc())
+                else:
+                    print(f"ℹ️ [RAG] Skipping embedding for {file_type} - already processed during upload")
+                        
+            except Exception as e:
+                print(f"❌ [ATTACHMENT ANALYSIS] Failed to store analysis for {filename}: {e}")
+                import traceback
+                print(traceback.format_exc())
+                
+    except Exception as e:
+        print(f"❌ [ATTACHMENT ANALYSIS] Error in extract_and_store_attachment_analysis_from_response: {e}")
+        import traceback
+        print(traceback.format_exc())
 
 async def _save_message(
     session_id: str,
