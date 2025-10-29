@@ -81,10 +81,26 @@ class SimpleSessionManager:
                 }
         
         # Create new session for authenticated user
-        new_session_id = str(uuid4())
-        new_project_id = project_id or uuid4()
+        # IMPORTANT: For authenticated users, project_id is REQUIRED (no auto-creation)
+        # Users must create projects explicitly via the projects API
+        if not project_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Project ID required for authenticated users. Please create a project first via /api/v1/projects"
+            )
         
-        # Ensure dossier exists for the project
+        # Verify project exists and belongs to user
+        dossier_result = supabase.table("dossier").select("*").eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
+        if not dossier_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project not found or you don't have access to it. Please create a project first via /api/v1/projects"
+            )
+        
+        new_session_id = str(uuid4())
+        new_project_id = project_id  # Use provided project_id (required)
+        
+        # Ensure dossier exists for the project (should already exist, but double-check)
         await SimpleSessionManager._ensure_dossier_exists(new_project_id, str(user_id))
         
         session_data = {

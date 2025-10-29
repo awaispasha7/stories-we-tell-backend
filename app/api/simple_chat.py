@@ -274,27 +274,27 @@ async def chat(
                             print(f"⚠️ Dossier retrieval error: {e}")
                     
                     # Get RAG context from uploaded documents
-                    # IMPORTANT: Pass project_id=None to search across ALL user sessions
-                    # This allows users to reference characters/stories from previous chats
-                    # Story development benefits from cross-session context
+                    # IMPORTANT: Use project_id to limit search to current project only
+                    # Each project = separate story with isolated context
+                    # Stories should be isolated - no cross-project character references
                     rag_context = None
                     if rag_service:
                         try:
                             if is_authenticated:
                                 # For authenticated users, use their actual user_id
                                 rag_user_id = UUID(user_id)
-                                print(f"🔍 Getting RAG context for user: {rag_user_id}, searching across ALL sessions (project_id=None)")
+                                print(f"🔍 Getting RAG context for user: {rag_user_id}, project: {project_id} (project-level isolation)")
                             else:
                                 # For anonymous users, use the special anonymous user ID
                                 rag_user_id = UUID("00000000-0000-0000-0000-000000000000")
-                                print(f"🔍 Getting RAG context for anonymous user: {rag_user_id}, searching across ALL sessions (project_id=None)")
+                                print(f"🔍 Getting RAG context for anonymous user: {rag_user_id}, project: {project_id} (project-level isolation)")
                             
-                            # Pass project_id=None to search across all user sessions
-                            # This enables cross-session context for story development
+                            # Pass project_id to limit search to current project only
+                            # This ensures each story/project is isolated and independent
                             rag_context = await rag_service.get_rag_context(
                                 user_message=chat_request.text,
                                 user_id=rag_user_id,
-                                project_id=None,  # Search across ALL sessions, not just current project
+                                project_id=UUID(project_id) if project_id else None,  # Limit to current project
                                 conversation_history=conversation_history
                             )
                             print(f"📚 RAG context retrieved: {rag_context.get('user_context_count', 0)} user messages, {rag_context.get('document_context_count', 0)} document chunks")

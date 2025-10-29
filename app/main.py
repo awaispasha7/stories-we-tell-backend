@@ -61,6 +61,13 @@ except Exception as e:
     dossier = None
 
 try:
+    from app.api import projects
+    print("SUCCESS: Projects router imported")
+except Exception as e:
+    print(f"ERROR: Error importing projects router: {e}")
+    projects = None
+
+try:
     from app.api import upload
     print("SUCCESS: Upload router imported")
 except Exception as e:
@@ -104,6 +111,13 @@ if dossier:
         print("SUCCESS: Dossier router included")
     except Exception as e:
         print(f"ERROR: Error including dossier router: {e}")
+
+if projects:
+    try:
+        app.include_router(projects.router, prefix="/api/v1", tags=["projects"])
+        print("SUCCESS: Projects router included")
+    except Exception as e:
+        print(f"ERROR: Error including projects router: {e}")
 
 if upload:
     try:
