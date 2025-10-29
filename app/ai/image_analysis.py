@@ -5,9 +5,16 @@ Handles image analysis and description extraction for chat integration
 
 import base64
 from typing import Optional, Dict, Any
-import requests
 import os
+import requests
 from dotenv import load_dotenv
+
+# Try to import OpenAI SDK
+try:
+    from openai import OpenAI
+    OPENAI_SDK_AVAILABLE = True
+except ImportError:
+    OPENAI_SDK_AVAILABLE = False
 
 load_dotenv()
 
@@ -18,6 +25,14 @@ class ImageAnalysisService:
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
         if not self.openai_api_key:
             raise ValueError("OpenAI API key not found in environment variables")
+        
+        # Initialize OpenAI client if SDK is available
+        if OPENAI_SDK_AVAILABLE:
+            self.client = OpenAI(api_key=self.openai_api_key)
+            print(f"✅ [IMAGE ANALYSIS] Using OpenAI Python SDK")
+        else:
+            self.client = None
+            print(f"⚠️ [IMAGE ANALYSIS] OpenAI SDK not available, falling back to requests")
     
     def _detect_image_format(self, image_data: bytes) -> str:
         """
@@ -65,14 +80,67 @@ class ImageAnalysisService:
             # Determine analysis prompt based on image type
             analysis_prompt = self._get_analysis_prompt(image_type)
             
-            # Call OpenAI Vision API
+            print(f"🖼️ [IMAGE ANALYSIS] Analyzing image with type: {image_type}")
+            print(f"🖼️ [IMAGE ANALYSIS] Image format detected: {image_format}")
+            print(f"🖼️ [IMAGE ANALYSIS] Image size: {len(image_data)} bytes, Base64 size: {len(image_base64)} chars")
+            
+            # Use OpenAI SDK if available (recommended)
+            if OPENAI_SDK_AVAILABLE and self.client:
+                print(f"🖼️ [IMAGE ANALYSIS] Using OpenAI Python SDK")
+                
+                try:
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": analysis_prompt
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/{image_format};base64,{image_base64}",
+                                            "detail": "high"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        max_tokens=500,
+                        temperature=0.7
+                    )
+                    
+                    description = response.choices[0].message.content
+                    
+                    print(f"✅ [IMAGE ANALYSIS] Successfully analyzed image using SDK")
+                    print(f"📝 [IMAGE ANALYSIS] Description length: {len(description)} chars")
+                    print(f"📝 [IMAGE ANALYSIS] Description preview: {description[:200]}...")
+                    
+                    return {
+                        "success": True,
+                        "description": description,
+                        "image_type": image_type,
+                        "analysis": self._parse_analysis(description, image_type)
+                    }
+                    
+                except Exception as sdk_error:
+                    print(f"❌ [IMAGE ANALYSIS] SDK error: {str(sdk_error)}")
+                    print(f"❌ [IMAGE ANALYSIS] Error type: {type(sdk_error).__name__}")
+                    # Fall through to requests fallback
+            
+            # Fallback to requests if SDK not available or failed
+            print(f"🖼️ [IMAGE ANALYSIS] Using requests fallback")
+            
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.openai_api_key}"
             }
             
             payload = {
-                "model": "gpt-4-vision-preview",
+                "model": "gpt-4o",
                 "messages": [
                     {
                         "role": "user",
@@ -85,25 +153,32 @@ class ImageAnalysisService:
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/{image_format};base64,{image_base64}",
-                                    "detail": "high"  # High detail for better analysis
+                                    "detail": "high"
                                 }
                             }
                         ]
                     }
                 ],
-                "max_tokens": 500,  # Increased for more detailed responses
-                "temperature": 0.7  # Slightly creative for better descriptions
+                "max_tokens": 500,
+                "temperature": 0.7
             }
             
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
-                json=payload
+                json=payload,
+                timeout=60
             )
+            
+            print(f"🖼️ [IMAGE ANALYSIS] API response status: {response.status_code}")
             
             if response.status_code == 200:
                 result = response.json()
                 description = result['choices'][0]['message']['content']
+                
+                print(f"✅ [IMAGE ANALYSIS] Successfully analyzed image using requests")
+                print(f"📝 [IMAGE ANALYSIS] Description length: {len(description)} chars")
+                print(f"📝 [IMAGE ANALYSIS] Description preview: {description[:200]}...")
                 
                 return {
                     "success": True,
@@ -112,13 +187,20 @@ class ImageAnalysisService:
                     "analysis": self._parse_analysis(description, image_type)
                 }
             else:
+                error_text = response.text
+                print(f"❌ [IMAGE ANALYSIS] API error: {response.status_code}")
+                print(f"❌ [IMAGE ANALYSIS] Error response: {error_text[:500]}")
+                
                 return {
                     "success": False,
-                    "error": f"OpenAI API error: {response.status_code}",
+                    "error": f"OpenAI API error: {response.status_code} - {error_text[:200]}",
                     "description": "Unable to analyze image"
                 }
                 
         except Exception as e:
+            import traceback
+            print(f"❌ [IMAGE ANALYSIS] Exception during image analysis: {str(e)}")
+            print(f"❌ [IMAGE ANALYSIS] Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
                 "error": str(e),

@@ -109,32 +109,71 @@ async def chat(
         # Process attached image files for analysis
         image_context = ""
         if chat_request.attached_files:
-            print(f"🖼️ Processing {len(chat_request.attached_files)} attached files for analysis")
+            print(f"🖼️ [IMAGE ANALYSIS] Processing {len(chat_request.attached_files)} attached files for analysis")
+            print(f"🖼️ [IMAGE ANALYSIS] Attached files: {[{'name': f.get('name'), 'type': f.get('type'), 'url': f.get('url')[:50] + '...' if f.get('url') else None} for f in chat_request.attached_files]}")
             try:
                 from ..ai.image_analysis import image_analysis_service
                 if image_analysis_service:
-                    for attached_file in chat_request.attached_files:
-                        if attached_file.get("type") == "image":
-                            print(f"🖼️ Analyzing attached image: {attached_file.get('name', 'unknown')}")
+                    print(f"✅ [IMAGE ANALYSIS] Image analysis service available")
+                    for idx, attached_file in enumerate(chat_request.attached_files):
+                        file_type = attached_file.get("type", "unknown")
+                        file_name = attached_file.get("name", "unknown")
+                        file_url = attached_file.get("url", "")
+                        
+                        print(f"🖼️ [IMAGE ANALYSIS] Processing file {idx + 1}/{len(chat_request.attached_files)}: {file_name} (type: {file_type})")
+                        
+                        if file_type == "image" or file_type == "image/png" or file_type == "image/jpeg" or file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                            print(f"🖼️ [IMAGE ANALYSIS] Detected image file: {file_name}")
+                            print(f"🖼️ [IMAGE ANALYSIS] Image URL: {file_url[:100]}...")
+                            
                             try:
                                 import requests
-                                response = requests.get(attached_file["url"])
+                                print(f"🖼️ [IMAGE ANALYSIS] Downloading image from URL...")
+                                response = requests.get(file_url, timeout=30)
+                                
+                                print(f"🖼️ [IMAGE ANALYSIS] Download response status: {response.status_code}")
+                                print(f"🖼️ [IMAGE ANALYSIS] Download response size: {len(response.content)} bytes")
+                                
                                 if response.status_code == 200:
                                     image_data = response.content
+                                    print(f"🖼️ [IMAGE ANALYSIS] Image downloaded successfully, analyzing...")
+                                    
                                     analysis_result = await image_analysis_service.analyze_image(image_data, "character")
+                                    
+                                    print(f"🖼️ [IMAGE ANALYSIS] Analysis result: success={analysis_result.get('success')}")
+                                    
                                     if analysis_result["success"]:
-                                        image_context += f"\n\nImage Analysis ({attached_file.get('name', 'image')}): {analysis_result['description']}"
-                                        print(f"✅ Image analysis completed: {attached_file.get('name', 'unknown')}")
+                                        description = analysis_result.get('description', 'No description')
+                                        print(f"✅ [IMAGE ANALYSIS] Image analysis completed for {file_name}")
+                                        print(f"📝 [IMAGE ANALYSIS] Captured description: {description[:200]}...")
+                                        
+                                        image_context += f"\n\nImage Analysis ({file_name}): {description}"
+                                        print(f"✅ [IMAGE ANALYSIS] Image context added to prompt")
                                     else:
-                                        print(f"❌ Image analysis failed: {analysis_result.get('error', 'Unknown error')}")
+                                        error_msg = analysis_result.get('error', 'Unknown error')
+                                        print(f"❌ [IMAGE ANALYSIS] Image analysis failed for {file_name}: {error_msg}")
                                 else:
-                                    print(f"❌ Failed to download image: {response.status_code}")
+                                    print(f"❌ [IMAGE ANALYSIS] Failed to download image {file_name}: HTTP {response.status_code}")
                             except Exception as e:
-                                print(f"❌ Error processing image {attached_file.get('name', 'unknown')}: {str(e)}")
+                                import traceback
+                                print(f"❌ [IMAGE ANALYSIS] Error processing image {file_name}: {str(e)}")
+                                print(f"❌ [IMAGE ANALYSIS] Traceback: {traceback.format_exc()}")
+                        else:
+                            print(f"⏭️ [IMAGE ANALYSIS] Skipping non-image file: {file_name} (type: {file_type})")
+                    
+                    print(f"🖼️ [IMAGE ANALYSIS] Final image context length: {len(image_context)} characters")
+                    if image_context:
+                        print(f"📝 [IMAGE ANALYSIS] Final image context preview: {image_context[:300]}...")
+                    else:
+                        print(f"⚠️ [IMAGE ANALYSIS] No image context generated")
                 else:
-                    print(f"⚠️ Image analysis service not available, skipping {len(chat_request.attached_files)} attached files")
+                    print(f"⚠️ [IMAGE ANALYSIS] Image analysis service not available, skipping {len(chat_request.attached_files)} attached files")
             except Exception as e:
-                print(f"⚠️ Error importing image analysis service: {e}")
+                import traceback
+                print(f"❌ [IMAGE ANALYSIS] Error importing image analysis service: {e}")
+                print(f"❌ [IMAGE ANALYSIS] Traceback: {traceback.format_exc()}")
+        else:
+            print(f"ℹ️ [IMAGE ANALYSIS] No attached files in request")
         
         # Generate and stream AI response
         async def generate_stream():
