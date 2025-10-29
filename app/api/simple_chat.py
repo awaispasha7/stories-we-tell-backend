@@ -213,6 +213,12 @@ async def chat(
         else:
             print(f"ℹ️ [IMAGE ANALYSIS] No attached files in request")
         
+        # Log image context status before generating response
+        if image_context:
+            print(f"✅ [IMAGE ANALYSIS] Image context will be included in AI prompt: {len(image_context)} characters")
+        else:
+            print(f"ℹ️ [IMAGE ANALYSIS] No image context to include in AI prompt")
+        
         # Generate and stream AI response
         async def generate_stream():
             try:

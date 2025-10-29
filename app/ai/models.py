@@ -313,8 +313,16 @@ class AIModelManager:
                 messages.extend(recent_history)
                 print(f"📚 Using {len(recent_history)} messages from history for context")
             
-            # Add current user message
-            messages.append({"role": "user", "content": prompt})
+            # Add current user message with image context if available
+            image_context = kwargs.get("image_context", "")
+            if image_context:
+                # Include image context prominently with the user message
+                user_message = f"{prompt}\n\n{image_context}"
+                print(f"🖼️ [AI] Including image context in user message ({len(image_context)} chars)")
+            else:
+                user_message = prompt
+            
+            messages.append({"role": "user", "content": user_message})
 
             response = openai.chat.completions.create(
                 model="gpt-4.1-mini",  # Best price-to-quality for high-traffic chat with ~1M token context
