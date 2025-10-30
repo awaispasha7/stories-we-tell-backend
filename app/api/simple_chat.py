@@ -448,11 +448,20 @@ async def chat(
                                 print(f"📋 Updating dossier for project {project_id}")
                                 new_metadata = await dossier_extractor.extract_metadata(updated_conversation_history)
 
-                                # Merge characters/scenes with existing snapshot to avoid overwriting
+                                # Fetch existing dossier FIRST to merge characters/scenes and preserve title
+                                existing_snapshot = {}
+                                current_title = None
                                 try:
-                                    existing_snapshot = (existing_dossier.snapshot_json or {}) if 'existing_dossier' in locals() and existing_dossier else {}
-                                except Exception:
-                                    existing_snapshot = {}
+                                    from ..database.session_service_supabase import session_service
+                                    existing_dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                                    if existing_dossier:
+                                        existing_snapshot = existing_dossier.snapshot_json or {}
+                                        current_title = existing_snapshot.get("title")
+                                        print(f"📋 Fetched existing dossier: {current_title}")
+                                        print(f"📋 Existing characters: {len(existing_snapshot.get('characters', []))}")
+                                        print(f"📋 Existing scenes: {len(existing_snapshot.get('scenes', []))}")
+                                except Exception as _e:
+                                    print(f"⚠️ Could not fetch existing dossier: {_e}")
 
                                 # Merge characters by name (case-insensitive)
                                 try:
@@ -471,10 +480,12 @@ async def chat(
                                             else:
                                                 by_name[key] = c
                                         new_metadata["characters"] = list(by_name.values())
+                                        print(f"📋 Merged characters: {len(new_metadata['characters'])}")
                                     elif existing_chars:
                                         new_metadata["characters"] = existing_chars
-                                except Exception:
-                                    pass
+                                        print(f"📋 Preserved existing characters: {len(existing_chars)}")
+                                except Exception as e:
+                                    print(f"⚠️ Character merge failed: {e}")
 
                                 # Merge scenes by one_liner
                                 try:
@@ -493,21 +504,17 @@ async def chat(
                                             else:
                                                 by_line[key] = s
                                         new_metadata["scenes"] = list(by_line.values())
+                                        print(f"📋 Merged scenes: {len(new_metadata['scenes'])}")
                                     elif existing_scenes:
                                         new_metadata["scenes"] = existing_scenes
-                                except Exception:
-                                    pass
+                                        print(f"📋 Preserved existing scenes: {len(existing_scenes)}")
+                                except Exception as e:
+                                    print(f"⚠️ Scene merge failed: {e}")
 
-                                # Preserve user-entered project name (existing dossier title)
-                                try:
-                                    from ..database.session_service_supabase import session_service
-                                    existing_dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
-                                    current_title = (existing_dossier.snapshot_json or {}).get("title") if existing_dossier else None
-                                    if current_title:
-                                        new_metadata["title"] = current_title
-                                except Exception as _e:
-                                    # Non-fatal: if we can't fetch, continue with extracted metadata
-                                    print(f"⚠️ Could not fetch existing dossier title to preserve: {_e}")
+                                # Preserve user-entered project title
+                                if current_title:
+                                    new_metadata["title"] = current_title
+                                    print(f"📋 Preserved project title: {current_title}")
 
                                 # Update dossier in database
                                 dossier_update = DossierUpdate(
