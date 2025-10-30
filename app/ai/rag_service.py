@@ -21,10 +21,10 @@ class RAGService:
         self.user_context_weight = 0.4  # 40% weight on user-specific context
         self.global_context_weight = 0.3  # 30% weight on global patterns (includes image analysis)
         self.document_context_weight = 0.3  # 30% weight on document context
-        self.user_match_count = 10  # Retrieve top 10 similar user messages (better recall)
-        self.global_match_count = 3  # Retrieve top 3 global patterns (increased for image analysis)
-        self.document_match_count = 3  # Retrieve top 3 document chunks
-        self.similarity_threshold = 0.1  # Very low threshold for testing
+        self.user_match_count = 15  # Retrieve more user messages for stronger continuity
+        self.global_match_count = 5  # A few more global patterns
+        self.document_match_count = 6  # Broaden document context (images/docs)
+        self.similarity_threshold = 0.05  # Broader net to avoid misses
     
     def _get_embedding_service(self):
         """Lazy initialization of embedding service"""
@@ -63,7 +63,7 @@ class RAGService:
                 # Combine recent conversation for better context
                 recent_context = "\n".join([
                     f"{msg.get('role', 'user')}: {msg.get('content', '')}"
-                    for msg in conversation_history[-3:]
+                    for msg in conversation_history[-5:]  # include last 5 turns
                 ])
                 query_text = f"{recent_context}\nUser: {user_message}"
             else:

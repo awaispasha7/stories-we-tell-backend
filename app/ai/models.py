@@ -307,6 +307,11 @@ class AIModelManager:
         - Incorporate the visual details you observe naturally into your conversational response
         - Mention specific visual elements (e.g., "I can see [character name] has [description]")
         - Use conversation history to provide context-aware analysis (e.g., if character was mentioned before)
+        - If MULTIPLE IMAGES are present, structure your reply strictly as:
+          1) "Image 1: <filename>" — full analysis
+          2) "Image 2: <filename>" — full analysis
+          [...]
+          3) "Combined Summary" — compare/contrast and connect to story slots (character, frame, or setting)
 
         CONVERSATION CONTEXT:
         {self._build_conversation_context(kwargs.get("conversation_history", []), kwargs.get("image_context", ""))}
@@ -330,7 +335,18 @@ class AIModelManager:
             # Build user message content (ChatGPT-style content array)
             if image_data_list:
                 # ChatGPT-style: Send images directly to model
-                user_content = [{"type": "text", "text": prompt}]
+                # Preface to enumerate images and require sectioned outputs
+                filenames = [img.get("filename", "image.png") for img in image_data_list]
+                if len(filenames) > 1:
+                    listing = "\n".join([f"{i+1}) {name}" for i, name in enumerate(filenames)])
+                    preface = (
+                        "You will receive multiple images. Analyze each one in its own section and then add a Combined Summary.\n"
+                        f"Images:\n{listing}\n"
+                        "Format strictly: Image 1: <filename> … Image 2: <filename> … Combined Summary: …\n"
+                    )
+                else:
+                    preface = ""
+                user_content = [{"type": "text", "text": (preface + prompt) if preface else prompt}]
                 
                 for img_data in image_data_list:
                     image_bytes = img_data.get("data")
@@ -382,7 +398,7 @@ class AIModelManager:
             response = openai.chat.completions.create(
                 model=model_name,  # Use GPT-4o for vision, GPT-4o-mini for text-only
                 messages=messages,
-                max_completion_tokens=kwargs.get("max_tokens", 200),  # Optimized for chat responses
+                max_completion_tokens=kwargs.get("max_tokens", 600),  # Increased for multi-image, richer context
                 temperature=0.7,
                 top_p=1.0,  # Standard value for balanced creativity
                 n=1,  # Single response
