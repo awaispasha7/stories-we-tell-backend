@@ -448,6 +448,56 @@ async def chat(
                                 print(f"📋 Updating dossier for project {project_id}")
                                 new_metadata = await dossier_extractor.extract_metadata(updated_conversation_history)
 
+                                # Merge characters/scenes with existing snapshot to avoid overwriting
+                                try:
+                                    existing_snapshot = (existing_dossier.snapshot_json or {}) if 'existing_dossier' in locals() and existing_dossier else {}
+                                except Exception:
+                                    existing_snapshot = {}
+
+                                # Merge characters by name (case-insensitive)
+                                try:
+                                    existing_chars = existing_snapshot.get("characters", []) or []
+                                    new_chars = new_metadata.get("characters", []) or []
+                                    if new_chars:
+                                        by_name = {}
+                                        for c in existing_chars:
+                                            key = (c.get("name") or "").strip().lower()
+                                            by_name[key] = c
+                                        for c in new_chars:
+                                            key = (c.get("name") or "").strip().lower()
+                                            if key in by_name:
+                                                merged = {**by_name[key], **{k: v for k, v in c.items() if v}}
+                                                by_name[key] = merged
+                                            else:
+                                                by_name[key] = c
+                                        new_metadata["characters"] = list(by_name.values())
+                                    elif existing_chars:
+                                        new_metadata["characters"] = existing_chars
+                                except Exception:
+                                    pass
+
+                                # Merge scenes by one_liner
+                                try:
+                                    existing_scenes = existing_snapshot.get("scenes", []) or []
+                                    new_scenes = new_metadata.get("scenes", []) or []
+                                    if new_scenes:
+                                        by_line = {}
+                                        for s in existing_scenes:
+                                            key = (s.get("one_liner") or "").strip().lower()
+                                            by_line[key] = s
+                                        for s in new_scenes:
+                                            key = (s.get("one_liner") or "").strip().lower()
+                                            if key in by_line:
+                                                merged = {**by_line[key], **{k: v for k, v in s.items() if v}}
+                                                by_line[key] = merged
+                                            else:
+                                                by_line[key] = s
+                                        new_metadata["scenes"] = list(by_line.values())
+                                    elif existing_scenes:
+                                        new_metadata["scenes"] = existing_scenes
+                                except Exception:
+                                    pass
+
                                 # Preserve user-entered project name (existing dossier title)
                                 try:
                                     from ..database.session_service_supabase import session_service

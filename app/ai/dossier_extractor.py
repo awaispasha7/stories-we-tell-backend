@@ -44,13 +44,13 @@ class DossierExtractor:
             for msg in conversation_history
         ])
         
-        # Extraction prompt - Updated to match client requirements
+        # Extraction prompt - Extended to include logline, characters[], scenes[]
         extraction_prompt = f"""Based on this conversation about a story, extract structured metadata following the client's slot-based framework.
 
 Conversation:
 {context}
 
-Extract the following information (use "Unknown" if not mentioned):
+Extract the following information (use "Unknown" if not mentioned). Always include all keys. If something is not present, use empty string for strings and [] for arrays.
 
 STORY FRAME (Frame-first approach):
 1. story_timeframe: When does the story take place?
@@ -73,6 +73,14 @@ STORY CRAFT:
 TECHNICAL:
 13. runtime: Estimated runtime (3-5 minutes)
 14. title: Working title (if mentioned)
+15. logline: Single-sentence premise (if implied)
+
+CHARACTERS (array; include key even if empty):
+- name, description, role (e.g., protagonist/mentor)
+
+SCENES (array; include key even if empty):
+- one_liner (short beat/scene summary)
+- Optional: time_of_day, interior_exterior, tone
 
 Respond ONLY with valid JSON in this exact format:
 {{
@@ -89,7 +97,10 @@ Respond ONLY with valid JSON in this exact format:
     "outcome": "string",
     "likes_in_story": "string",
     "runtime": "3-5 minutes",
-    "title": "string"
+    "title": "string",
+    "logline": "string",
+    "characters": [{"name": "string", "description": "string", "role": "string"}],
+    "scenes": [{"one_liner": "string", "time_of_day": "string", "interior_exterior": "string", "tone": "string"}]
 }}"""
 
         try:
@@ -148,7 +159,10 @@ Respond ONLY with valid JSON in this exact format:
                 "outcome": "Unknown",
                 "likes_in_story": "Unknown",
                 "runtime": "3-5 minutes",
-                "title": "Untitled Story"
+                "title": "Untitled Story",
+                "logline": "",
+                "characters": [],
+                "scenes": []
             }
     
     async def should_update_dossier(self, conversation_history: list) -> bool:
