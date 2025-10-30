@@ -438,6 +438,12 @@ async def chat(
                         try:
                             # Check if we should update the dossier
                             should_update = await dossier_extractor.should_update_dossier(updated_conversation_history)
+                            # Heuristic fallback: update every 3 user turns if extractor declines
+                            if not should_update:
+                                user_turns = sum(1 for m in updated_conversation_history if m.get("role") == "user")
+                                if user_turns >= 3 and user_turns % 3 == 0:
+                                    print(f"ℹ️ Forcing dossier update on heuristic (user turns={user_turns})")
+                                    should_update = True
                             if should_update:
                                 print(f"📋 Updating dossier for project {project_id}")
                                 new_metadata = await dossier_extractor.extract_metadata(updated_conversation_history)
@@ -472,7 +478,7 @@ async def chat(
                                     "conversation_history": updated_conversation_history
                                 })
                             else:
-                                print(f"📋 Dossier update not needed for this turn")
+                                print(f"📋 Dossier update not needed for this turn (messages={len(updated_conversation_history)})")
                         except Exception as e:
                             print(f"⚠️ Failed to update dossier")
                             print(f"Error details: {e}")
