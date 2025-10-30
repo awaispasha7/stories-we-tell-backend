@@ -443,14 +443,12 @@ async def chat(
 
                     if dossier_extractor and project_id and len(updated_conversation_history) >= 2:
                         try:
-                            # Check if we should update the dossier
-                            should_update = await dossier_extractor.should_update_dossier(updated_conversation_history)
-                            # Heuristic fallback: update every 3 user turns if extractor declines
-                            if not should_update:
-                                user_turns = sum(1 for m in updated_conversation_history if m.get("role") == "user")
-                                if user_turns >= 3 and user_turns % 3 == 0:
-                                    print(f"ℹ️ Forcing dossier update on heuristic (user turns={user_turns})")
-                                    should_update = True
+                            # Force update every 2 user turns (more reliable than LLM decision)
+                            user_turns = sum(1 for m in updated_conversation_history if m.get("role") == "user")
+                            should_update = user_turns >= 2 and user_turns % 2 == 0
+                            
+                            print(f"📋 [DOSSIER] User turns: {user_turns}, Should update: {should_update}")
+                            
                             if should_update:
                                 print(f"📋 Updating dossier for project {project_id}")
                                 new_metadata = await dossier_extractor.extract_metadata(updated_conversation_history)

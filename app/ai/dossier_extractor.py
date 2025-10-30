@@ -186,18 +186,28 @@ Respond ONLY with valid JSON in this exact format:
             for msg in conversation_history
         ])
         
-        # LLM decision prompt
+        # LLM decision prompt - MORE AGGRESSIVE: Update on ANY story information
         decision_prompt = f"""You are analyzing a story development conversation to determine if the dossier should be updated.
 
 Conversation:
 {context}
 
-Based on this conversation, should the story dossier be updated? Consider:
-1. Did the user provide new story information (characters, plot, setting, genre, etc.)?
-2. Did the user reveal important story details that should be captured?
-3. Is there meaningful story content that wasn't in previous updates?
+Based on this conversation, should the story dossier be updated? 
 
-Respond with ONLY "YES" if the dossier should be updated, or "NO" if it shouldn't.
+**UPDATE (say YES) if ANY of these are true:**
+1. User provided ANY story information (names, time period, location, characters, plot, conflict, etc.)
+2. User answered questions about their story
+3. User shared ANY details about characters, setting, or plot
+4. User mentioned genre, tone, or style
+5. There is ANY story content worth capturing
+
+**Only say NO if:**
+- Pure greetings with no story content ("hi", "hello")
+- Off-topic conversation unrelated to story
+
+BE AGGRESSIVE: When in doubt, say YES. It's better to update too often than miss story information.
+
+Respond with ONLY "YES" or "NO".
 
 Decision:"""
 
