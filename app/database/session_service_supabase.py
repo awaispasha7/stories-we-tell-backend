@@ -398,6 +398,7 @@ class SessionService:
 
         return None
     
+    
     def delete_dossier(self, project_id: UUID, user_id: UUID) -> bool:
         """Delete a dossier for a user"""
         supabase = self.get_supabase()
