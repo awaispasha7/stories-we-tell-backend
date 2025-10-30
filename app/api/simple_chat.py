@@ -11,6 +11,7 @@ import json
 import asyncio
 import os
 from datetime import datetime, timezone
+import re
 
 from ..models import ChatRequest, DossierUpdate
 from .simple_session_manager import SimpleSessionManager
@@ -35,6 +36,54 @@ router = APIRouter()
 # Placeholder event sender (no-op). Replace with real SSE/bus if needed.
 async def send_event(_event: dict) -> None:
     return
+
+def _is_story_completion_text(text: str) -> bool:
+    """Heuristic to detect completion based on assistant text."""
+    if not text:
+        return False
+    normalized = text.lower()
+    completion_markers = [
+        "the story is complete",
+        "your story is complete",
+        "story is complete",
+        "we've reached the end",
+        "the end of the story",
+        "conclusion of the story",
+        "would you like to create another story",
+        "would you like to start another story",
+    ]
+    return any(marker in normalized for marker in completion_markers)
+
+async def _send_completion_email(
+    user_email: Optional[str],
+    user_name: Optional[str],
+    project_id: str,
+    dossier_snapshot: Optional[dict],
+    generated_script: str
+) -> None:
+    """Send a completion email via existing EmailService (Resend-backed)."""
+    try:
+        from ..services.email_service import EmailService  # type: ignore
+        service = EmailService()
+        if not service.available:
+            print("⚠️ EmailService unavailable - skipping completion email")
+            return
+        if not user_email:
+            print("⚠️ Missing user_email - skipping completion email")
+            return
+        story_data = dossier_snapshot or {}
+        ok = await service.send_story_captured_email(
+            user_email=user_email,
+            user_name=user_name or "Writer",
+            story_data=story_data,
+            generated_script=generated_script or "",
+            project_id=project_id,
+            client_emails=None,
+        )
+        if ok:
+            print("📧 Completion email sent via EmailService")
+    except Exception as e:
+        print(f"⚠️ Failed to send completion email: {e}")
 
 @router.post("/chat")
 async def chat(
@@ -378,13 +427,20 @@ async def chat(
                         )
                     
                     # Update dossier if needed (after both user and assistant messages are saved)
-                    if dossier_extractor and project_id and len(conversation_history) >= 2:
+                    # IMPORTANT: re-fetch conversation history so it includes the assistant's reply we just saved
+                    updated_conversation_history = conversation_history
+                    try:
+                        updated_conversation_history = await _get_conversation_history(str(session_id), str(user_id))
+                    except Exception as _history_e:
+                        print(f"⚠️ Failed to refresh conversation history before dossier update: {_history_e}")
+
+                    if dossier_extractor and project_id and len(updated_conversation_history) >= 2:
                         try:
                             # Check if we should update the dossier
-                            should_update = await dossier_extractor.should_update_dossier(conversation_history)
+                            should_update = await dossier_extractor.should_update_dossier(updated_conversation_history)
                             if should_update:
                                 print(f"📋 Updating dossier for project {project_id}")
-                                new_metadata = await dossier_extractor.extract_metadata(conversation_history)
+                                new_metadata = await dossier_extractor.extract_metadata(updated_conversation_history)
 
                                 # Preserve user-entered project name (existing dossier title)
                                 try:
@@ -413,7 +469,7 @@ async def chat(
                                     "type": "dossier_updated",
                                     "project_id": str(project_id),
                                     "dossier": new_metadata,
-                                    "conversation_history": conversation_history
+                                    "conversation_history": updated_conversation_history
                                 })
                             else:
                                 print(f"📋 Dossier update not needed for this turn")
@@ -443,6 +499,56 @@ async def chat(
                             print(f"📚 Stored assistant message embedding: {assistant_message_id}")
                         except Exception as e:
                             print(f"⚠️ Failed to store assistant message embedding: {e}")
+
+                    # Detect completion and handle wrap-up actions
+                    try:
+                        updated_history_for_completion = await _get_conversation_history(str(session_id), str(user_id))
+                        is_complete = _is_story_completion_text(full_response)
+                        if is_complete:
+                            print("✅ Story completion detected. Sending email and closing session.")
+                            # fetch dossier snapshot if available
+                            dossier_snapshot = None
+                            try:
+                                if project_id:
+                                    from ..database.session_service_supabase import session_service
+                                    d = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                                    dossier_snapshot = d.snapshot_json if d else None
+                            except Exception as _e:
+                                print(f"⚠️ Could not fetch dossier snapshot for email: {_e}")
+
+                            # try to get user email/name from users table if authenticated
+                            user_email = None
+                            user_name = None
+                            if is_authenticated:
+                                try:
+                                    supabase = get_supabase_client()
+                                    res = supabase.table("users").select("email, raw_user_meta_data").eq("id", str(user_id)).limit(1).execute()
+                                    if res.data:
+                                        user_email = res.data[0].get("email")
+                                        meta = res.data[0].get("raw_user_meta_data") or {}
+                                        user_name = meta.get("full_name") or meta.get("name")
+                                except Exception:
+                                    pass
+
+                            await _send_completion_email(
+                                user_email=user_email,
+                                user_name=user_name,
+                                project_id=str(project_id),
+                                dossier_snapshot=dossier_snapshot,
+                                generated_script=full_response,
+                            )
+
+                            # mark session inactive
+                            try:
+                                supabase = get_supabase_client()
+                                supabase.table("sessions").update({
+                                    "is_active": False,
+                                    "updated_at": datetime.now(timezone.utc).isoformat()
+                                }).eq("session_id", str(session_id)).execute()
+                            except Exception as _e:
+                                print(f"⚠️ Failed to close session: {_e}")
+                    except Exception as _e:
+                        print(f"⚠️ Completion handling error: {_e}")
                     
                 else:
                     # Fallback response if AI is not available
