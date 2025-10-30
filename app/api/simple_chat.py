@@ -631,41 +631,36 @@ async def _extract_and_store_attachment_analysis_from_response(
             
             # Create an embedding for RAG storage regardless of asset update success
             try:
-                from ..ai.document_processor import document_processor
                 from ..ai.embedding_service import get_embedding_service
-                
-                if document_processor and hasattr(document_processor, 'vector_storage'):
-                    embedding_text = f"Attachment Analysis ({filename}): {analysis_text}"
-                    embedding_service = get_embedding_service()
-                    if embedding_service:
-                        embedding = await embedding_service.generate_query_embedding(embedding_text)
-                        if embedding:
-                            # Only store document_embedding if we have an asset_id or relax FK usage by skipping insert
-                            if asset_id:
-                                await document_processor.vector_storage.store_document_embedding(
-                                    asset_id=UUID(asset_id),
-                                    user_id=UUID(user_id),
-                                    project_id=UUID(project_id) if project_id else None,
-                                    document_type=file_type,
-                                    chunk_index=0,
-                                    chunk_text=embedding_text,
-                                    embedding=embedding,
-                                    metadata={
-                                        "filename": filename,
-                                        "file_type": file_type,
-                                        "embedding_model": "text-embedding-3-small",
-                                        "analysis": analysis_text
-                                    }
-                                )
-                                print(f"✅ [RAG] Created embedding for {file_type} analysis: {filename}")
-                            else:
-                                print(f"⚠️ [RAG] Skipped document_embedding due to missing asset_id (analysis still embedded via assistant message)")
-                        else:
-                            print(f"⚠️ [RAG] Failed to generate embedding for {filename}")
+                from ..ai.vector_storage import vector_storage
+
+                embedding_text = f"Attachment Analysis ({filename}): {analysis_text}"
+                embedding_service = get_embedding_service()
+                if embedding_service:
+                    embedding = await embedding_service.generate_query_embedding(embedding_text)
+                    if embedding and asset_id:
+                        await vector_storage.store_document_embedding(
+                            asset_id=UUID(asset_id),
+                            user_id=UUID(user_id),
+                            project_id=UUID(project_id) if project_id else None,
+                            document_type=file_type,
+                            chunk_index=0,
+                            chunk_text=embedding_text,
+                            embedding=embedding,
+                            metadata={
+                                "filename": filename,
+                                "file_type": file_type,
+                                "embedding_model": "text-embedding-3-small",
+                                "analysis": analysis_text
+                            }
+                        )
+                        print(f"✅ [RAG] Created embedding for {file_type} analysis: {filename}")
+                    elif not asset_id:
+                        print(f"⚠️ [RAG] Skipped document_embedding due to missing asset_id (analysis still embedded via assistant message)")
                     else:
-                        print(f"⚠️ [RAG] Embedding service not available")
+                        print(f"⚠️ [RAG] Failed to generate embedding for {filename}")
                 else:
-                    print(f"⚠️ [RAG] Document processor vector storage not available")
+                    print(f"⚠️ [RAG] Embedding service not available")
             except Exception as e:
                 print(f"⚠️ [RAG] Failed to create embedding for {filename}: {e}")
                 import traceback
