@@ -544,106 +544,132 @@ async def _extract_and_store_attachment_analysis_from_response(
             print("⚠️ [ATTACHMENT ANALYSIS] Supabase not available, skipping storage")
             return
         
-        # For each image attachment, extract analysis from the response
+        # Build filename list to help section mapping
+        filenames = [img.get("filename", "image.png") for img in image_data_list]
+        
+        # Try to split the assistant response into per-image sections using our enforced format
+        # Sections like: "Image 1: <filename>" ... "Image 2: <filename>" ... followed by "Combined Summary"
+        per_image_analysis: Dict[str, str] = {}
+        try:
+            import re
+            # Create a pattern that finds "Image <index>: <anything>" headers
+            header_regex = re.compile(r"(?i)(Image\s+(\d+)\s*:\s*(.*?))\n", re.M)
+            matches = list(header_regex.finditer(full_response))
+            if matches:
+                # Append a sentinel end at end of text to slice last section
+                spans = []
+                for i, m in enumerate(matches):
+                    start = m.start()
+                    end = matches[i+1].start() if i+1 < len(matches) else len(full_response)
+                    spans.append((m, start, end))
+                for m, start, end in spans:
+                    idx_str = m.group(2)
+                    fname_header = m.group(3).strip()
+                    section_text = full_response[start:end].strip()
+                    try:
+                        idx = int(idx_str) - 1
+                        if 0 <= idx < len(filenames):
+                            key = filenames[idx]
+                            per_image_analysis[key] = section_text
+                        else:
+                            # Fallback: map by header filename if present
+                            per_image_analysis[fname_header] = section_text
+                    except:
+                        per_image_analysis[fname_header] = section_text
+        except Exception as e:
+            print(f"⚠️ [ATTACHMENT ANALYSIS] Failed to split per-image sections: {e}")
+        
+        # For each image attachment, extract targeted analysis
         for img_data in image_data_list:
             filename = img_data.get("filename", "unknown")
             metadata = attachment_metadata.get(filename)
             
-            if not metadata:
-                continue
+            file_type = (metadata or {}).get("file_type", "image")
+            asset_id = (metadata or {}).get("asset_id")
             
-            asset_id = metadata.get("asset_id")
-            file_type = metadata.get("file_type", "image")
+            # Pick the most relevant analysis: dedicated section if available, otherwise full response
+            analysis_text = per_image_analysis.get(filename) or full_response
             
+            # Ensure we have an asset to tie analysis/embedding to
             if not asset_id:
-                print(f"⚠️ [ATTACHMENT ANALYSIS] No asset_id found for {filename}, skipping")
-                continue
+                try:
+                    from uuid import uuid4
+                    new_asset_id = str(uuid4())
+                    minimal_asset = {
+                        "id": new_asset_id,
+                        "project_id": str(project_id) if project_id else None,
+                        "media_type": "image",
+                        "uri": filename,
+                        "processing_status": "processed",
+                        "processing_metadata": {"source": "chat_inline", "filename": filename},
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    supabase.table("assets").insert(minimal_asset).execute()
+                    asset_id = new_asset_id
+                    print(f"✅ [ATTACHMENT ANALYSIS] Created minimal asset {asset_id} for {filename}")
+                except Exception as e:
+                    print(f"⚠️ [ATTACHMENT ANALYSIS] Failed to create minimal asset for {filename}: {e}")
+                    asset_id = None
             
-            # Use the model's response as the analysis
-            # The response contains visual details since model saw the image with full context
-            # Combine response with conversation context for richer analysis
-            analysis_text = full_response
-            
-            # Enhance analysis with context if available
-            if conversation_history:
-                recent_context = " | ".join([
-                    f"{msg.get('role', 'unknown')}: {msg.get('content', '')[:50]}"
-                    for msg in conversation_history[-3:]
-                ])
-                analysis_text = f"Context: {recent_context}\n\nAnalysis: {full_response}"
-            
-            if not analysis_text:
-                print(f"⚠️ [ATTACHMENT ANALYSIS] Empty response for {filename}, skipping")
-                continue
-            
-            # Store in assets table (generic for all file types)
-            update_data = {
-                "analysis": analysis_text,
-                "analysis_type": file_type,  # Use file_type instead of hardcoded type
-                "analysis_data": {
-                    "extracted_from": "gpt4o_analysis" if file_type == "image" else "document_processor",
-                    "filename": filename,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "file_type": file_type
+            # Update asset analysis fields when we have an asset
+            if asset_id:
+                update_data = {
+                    "analysis": analysis_text,
+                    "analysis_type": file_type,
+                    "analysis_data": {
+                        "extracted_from": "gpt4o_analysis",
+                        "filename": filename,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "file_type": file_type
+                    }
                 }
-            }
+                try:
+                    supabase.table("assets").update(update_data).eq("id", asset_id).execute()
+                    print(f"✅ [ATTACHMENT ANALYSIS] Stored analysis for asset {asset_id} ({filename}, type: {file_type})")
+                except Exception as e:
+                    print(f"❌ [ATTACHMENT ANALYSIS] Failed to update asset {asset_id}: {e}")
             
+            # Create an embedding for RAG storage regardless of asset update success
             try:
-                supabase.table("assets").update(update_data).eq("id", asset_id).execute()
-                print(f"✅ [ATTACHMENT ANALYSIS] Stored analysis for asset {asset_id} ({filename}, type: {file_type})")
+                from ..ai.document_processor import document_processor
+                from ..ai.embedding_service import get_embedding_service
                 
-                # Create embedding for RAG storage (only for images - documents already embedded during upload)
-                if file_type == "image":
-                    try:
-                        from ..ai.document_processor import document_processor
-                        from ..ai.embedding_service import get_embedding_service
-                        
-                        if document_processor and hasattr(document_processor, 'vector_storage'):
-                            # Use GPT-4o's analysis text for embedding
-                            # This text contains rich semantic information guided by user's prompt
-                            embedding_text = f"Attachment Analysis ({filename}): {analysis_text}"
-                            
-                            # Generate OpenAI text embedding from GPT-4o's analysis
-                            embedding_service = get_embedding_service()
-                            if embedding_service:
-                                embedding = await embedding_service.generate_query_embedding(embedding_text)
-                                
-                                if embedding:
-                                    # Store using document processor's vector storage
-                                    await document_processor.vector_storage.store_document_embedding(
-                                        asset_id=UUID(asset_id),
-                                        user_id=UUID(user_id),
-                                        project_id=UUID(project_id) if project_id else None,
-                                        document_type=file_type,  # Generic: "image", "document", etc.
-                                        chunk_index=0,
-                                        chunk_text=embedding_text,
-                                        embedding=embedding,  # OpenAI embedding (1536 dims)
-                                        metadata={
-                                            "filename": filename,
-                                            "file_type": file_type,
-                                            "embedding_model": "text-embedding-3-small",
-                                            "analysis": analysis_text
-                                        }
-                                    )
-                                    print(f"✅ [RAG] Created embedding for {file_type} analysis: {filename}")
-                                else:
-                                    print(f"⚠️ [RAG] Failed to generate embedding for {filename}")
+                if document_processor and hasattr(document_processor, 'vector_storage'):
+                    embedding_text = f"Attachment Analysis ({filename}): {analysis_text}"
+                    embedding_service = get_embedding_service()
+                    if embedding_service:
+                        embedding = await embedding_service.generate_query_embedding(embedding_text)
+                        if embedding:
+                            # Only store document_embedding if we have an asset_id or relax FK usage by skipping insert
+                            if asset_id:
+                                await document_processor.vector_storage.store_document_embedding(
+                                    asset_id=UUID(asset_id),
+                                    user_id=UUID(user_id),
+                                    project_id=UUID(project_id) if project_id else None,
+                                    document_type=file_type,
+                                    chunk_index=0,
+                                    chunk_text=embedding_text,
+                                    embedding=embedding,
+                                    metadata={
+                                        "filename": filename,
+                                        "file_type": file_type,
+                                        "embedding_model": "text-embedding-3-small",
+                                        "analysis": analysis_text
+                                    }
+                                )
+                                print(f"✅ [RAG] Created embedding for {file_type} analysis: {filename}")
                             else:
-                                print(f"⚠️ [RAG] Embedding service not available")
+                                print(f"⚠️ [RAG] Skipped document_embedding due to missing asset_id (analysis still embedded via assistant message)")
                         else:
-                            print(f"⚠️ [RAG] Document processor vector storage not available")
-                    except Exception as e:
-                        print(f"⚠️ [RAG] Failed to create embedding for {filename}: {e}")
-                        import traceback
-                        print(traceback.format_exc())
+                            print(f"⚠️ [RAG] Failed to generate embedding for {filename}")
+                    else:
+                        print(f"⚠️ [RAG] Embedding service not available")
                 else:
-                    print(f"ℹ️ [RAG] Skipping embedding for {file_type} - already processed during upload")
-                        
+                    print(f"⚠️ [RAG] Document processor vector storage not available")
             except Exception as e:
-                print(f"❌ [ATTACHMENT ANALYSIS] Failed to store analysis for {filename}: {e}")
+                print(f"⚠️ [RAG] Failed to create embedding for {filename}: {e}")
                 import traceback
                 print(traceback.format_exc())
-                
     except Exception as e:
         print(f"❌ [ATTACHMENT ANALYSIS] Error in extract_and_store_attachment_analysis_from_response: {e}")
         import traceback

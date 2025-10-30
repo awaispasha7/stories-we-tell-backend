@@ -188,7 +188,34 @@ class AIModelManager:
                     rag_context_text = f"\n\n## RELEVANT CONTEXT FROM YOUR PREVIOUS CONVERSATIONS:\n{rag_context.get('combined_context_text')}\n"
                     print(f"📚 Including RAG context: {rag_context.get('user_context_count', 0)} user messages, {rag_context.get('document_context_count', 0)} document chunks, {rag_context.get('global_context_count', 0)} global patterns")
                 else:
-                    print(f"⚠️ RAG context present but no combined_context_text found")
+                    # Fallback: build lightweight context if items exist but combined text wasn't provided
+                    uc = rag_context.get("user_context") or []
+                    dc = rag_context.get("document_context") or []
+                    gc = rag_context.get("global_context") or []
+                    if uc or dc or gc:
+                        parts = []
+                        if uc:
+                            parts.append("## Relevant User Messages:")
+                            for i, item in enumerate(uc[:5], 1):
+                                snippet = item.get("content") or item.get("content_snippet") or ""
+                                parts.append(f"{i}. {snippet[:200]}...")
+                            parts.append("")
+                        if dc:
+                            parts.append("## Relevant Document Chunks:")
+                            for i, item in enumerate(dc[:5], 1):
+                                chunk = item.get("chunk_text", "")
+                                parts.append(f"{i}. {chunk[:200]}...")
+                            parts.append("")
+                        if gc:
+                            parts.append("## Relevant Knowledge:")
+                            for i, item in enumerate(gc[:3], 1):
+                                example = item.get("example_text", "")
+                                parts.append(f"{i}. {example[:150]}...")
+                            parts.append("")
+                        rag_context_text = "\n\n" + "\n".join(parts)
+                        print(f"📚 Built fallback RAG context: user={len(uc)} doc={len(dc)} global={len(gc)}")
+                    else:
+                        print(f"⚠️ RAG context present but empty items")
             
             # Check for dossier context (existing story data) - Updated for client requirements
             dossier_context = kwargs.get("dossier_context")
