@@ -431,8 +431,15 @@ async def chat(
                     updated_conversation_history = conversation_history
                     try:
                         updated_conversation_history = await _get_conversation_history(str(session_id), str(user_id))
+                        print(f"📋 [DOSSIER CHECK] Conversation history length: {len(updated_conversation_history)}")
                     except Exception as _history_e:
                         print(f"⚠️ Failed to refresh conversation history before dossier update: {_history_e}")
+
+                    print(f"📋 [DOSSIER CHECK] Checking dossier update conditions:")
+                    print(f"   - dossier_extractor available: {dossier_extractor is not None}")
+                    print(f"   - project_id: {project_id}")
+                    print(f"   - conversation history length: {len(updated_conversation_history)}")
+                    print(f"   - All conditions met: {dossier_extractor and project_id and len(updated_conversation_history) >= 2}")
 
                     if dossier_extractor and project_id and len(updated_conversation_history) >= 2:
                         try:
