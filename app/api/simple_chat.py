@@ -12,7 +12,7 @@ import asyncio
 import os
 from datetime import datetime, timezone
 
-from ..models import ChatRequest
+from ..models import ChatRequest, DossierUpdate
 from .simple_session_manager import SimpleSessionManager
 from ..database.supabase import get_supabase_client
 
@@ -31,6 +31,10 @@ except Exception as e:
     dossier_extractor = None
 
 router = APIRouter()
+
+# Placeholder event sender (no-op). Replace with real SSE/bus if needed.
+async def send_event(_event: dict) -> None:
+    return
 
 @router.post("/chat")
 async def chat(
@@ -380,73 +384,42 @@ async def chat(
                             should_update = await dossier_extractor.should_update_dossier(conversation_history)
                             if should_update:
                                 print(f"📋 Updating dossier for project {project_id}")
-                                # Extract new metadata from conversation
                                 new_metadata = await dossier_extractor.extract_metadata(conversation_history)
-                                
+
+                                # Preserve user-entered project name (existing dossier title)
+                                try:
+                                    from ..database.session_service_supabase import session_service
+                                    existing_dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                                    current_title = (existing_dossier.snapshot_json or {}).get("title") if existing_dossier else None
+                                    if current_title:
+                                        new_metadata["title"] = current_title
+                                except Exception as _e:
+                                    # Non-fatal: if we can't fetch, continue with extracted metadata
+                                    print(f"⚠️ Could not fetch existing dossier title to preserve: {_e}")
+
                                 # Update dossier in database
-                                from ..database.session_service_supabase import session_service
-                                from ..models import DossierUpdate
-                                
                                 dossier_update = DossierUpdate(
                                     snapshot_json=new_metadata
                                 )
-                                
                                 updated_dossier = session_service.update_dossier(
-                                    UUID(project_id), 
-                                    UUID(user_id), 
+                                    UUID(project_id),
+                                    UUID(user_id),
                                     dossier_update
                                 )
-                                
                                 if updated_dossier:
                                     print(f"✅ Dossier updated: {updated_dossier.title}")
-                                    
-                                    # Check if story is complete and trigger script generation + email
-                                    if ai_manager.is_story_complete(new_metadata):
-                                        print(f"🎬 Story is complete! Generating script and sending email...")
-                                        
-                                        try:
-                                            # Generate video script
-                                            script_response = await ai_manager.generate_response(
-                                                task_type=TaskType.SCRIPT,
-                                                prompt="Generate video script",
-                                                dossier_context=new_metadata
-                                            )
-                                            
-                                            generated_script = script_response.get("response", "Script generation failed")
-                                            print(f"✅ Script generated successfully")
-                                            
-                                            # Send email notification
-                                            from ..services.email_service import email_service
-                                            
-                                            # Get user email and name from environment variables
-                                            user_email = os.getenv("FROM_EMAIL", "user@example.com")
-                                            user_name = os.getenv("USER_NAME", "Story Creator")
-                                            
-                                            # Get client emails (can be multiple, comma-separated)
-                                            client_emails_str = os.getenv("CLIENT_EMAIL", "client@example.com")
-                                            client_emails = [email.strip() for email in client_emails_str.split(",") if email.strip()]
-                                            
-                                            email_sent = await email_service.send_story_captured_email(
-                                                user_email=user_email,
-                                                user_name=user_name,
-                                                story_data=new_metadata,
-                                                generated_script=generated_script,
-                                                project_id=str(project_id),
-                                                client_emails=client_emails
-                                            )
-                                            
-                                            if email_sent:
-                                                print(f"✅ Email notification sent successfully")
-                                            else:
-                                                print(f"⚠️ Email notification failed")
-                                                
-                                        except Exception as e:
-                                            print(f"⚠️ Script generation or email error: {e}")
-                                    
-                                else:
-                                    print(f"⚠️ Failed to update dossier")
+                                # Send updated dossier to the client for immediate refresh
+                                await send_event({
+                                    "type": "dossier_updated",
+                                    "project_id": str(project_id),
+                                    "dossier": new_metadata,
+                                    "conversation_history": conversation_history
+                                })
+                            else:
+                                print(f"📋 Dossier update not needed for this turn")
                         except Exception as e:
-                            print(f"⚠️ Dossier update error: {e}")
+                            print(f"⚠️ Failed to update dossier")
+                            print(f"Error details: {e}")
                     
                     # Store message embeddings for RAG
                     if rag_service and assistant_message_id:

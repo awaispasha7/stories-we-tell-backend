@@ -4,7 +4,7 @@ Handles project creation and management for authenticated users
 Projects = Stories (user-created, can have multiple sessions)
 """
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Body
 from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
@@ -17,6 +17,9 @@ router = APIRouter()
 class ProjectCreate(BaseModel):
     name: str  # User-friendly project name (e.g., "Romantic Novel")
     description: Optional[str] = None
+
+class ProjectRename(BaseModel):
+    name: str
 
 class ProjectResponse(BaseModel):
     project_id: UUID
@@ -208,6 +211,30 @@ async def get_project(
         "session_count": len(sessions),
         "sessions": sessions
     }
+
+@router.put("/projects/{project_id}/name")
+async def rename_project(project_id: str, data: ProjectRename, user_id: Optional[str] = Header(None, alias="X-User-ID")):
+    """Rename project by updating dossier.snapshot_json.title (preserves other fields)."""
+    try:
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        supabase = get_supabase_client()
+        # Fetch dossier
+        dossier_result = supabase.table("dossier").select("*").eq("project_id", project_id).eq("user_id", str(user_id)).execute()
+        if not dossier_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        dossier = dossier_result.data[0]
+        snapshot = dossier.get("snapshot_json") or {}
+        # Update title only
+        snapshot["title"] = data.name
+        supabase.table("dossier").update({
+            "snapshot_json": snapshot,
+        }).eq("project_id", project_id).eq("user_id", str(user_id)).execute()
+        return {"success": True, "project_id": project_id, "name": data.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/projects/{project_id}")
 async def delete_project(
