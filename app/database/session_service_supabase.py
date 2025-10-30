@@ -374,10 +374,28 @@ class SessionService:
         if dossier_data.snapshot_json is not None:
             update_data["snapshot_json"] = dossier_data.snapshot_json
         
+        print(f"📝 [DB] update_dossier: project_id={project_id}, user_id={user_id}, keys={list(update_data.keys())}")
         result = supabase.table("dossier").update(update_data).eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
-        
-        if result.data and len(result.data) > 0:
+        updated_rows = len(result.data) if result.data else 0
+        print(f"📝 [DB] update_dossier rows updated: {updated_rows}")
+
+        if result.data and updated_rows > 0:
             return Dossier(**result.data[0])
+
+        # Fallback: if no rows updated, try upsert (handles RLS timing or missing row)
+        try:
+            print("📝 [DB] update_dossier fallback to upsert")
+            upsert_record = {
+                "project_id": str(project_id),
+                "user_id": str(user_id),
+                **update_data
+            }
+            upsert_res = supabase.table("dossier").upsert(upsert_record).execute()
+            if upsert_res.data:
+                return Dossier(**upsert_res.data[0])
+        except Exception as e:
+            print(f"❌ [DB] update_dossier upsert error: {e}")
+
         return None
     
     def delete_dossier(self, project_id: UUID, user_id: UUID) -> bool:
@@ -508,12 +526,13 @@ class SessionService:
         supabase = self.get_supabase()
         
         # Check if project exists
-        result = supabase.table("dossier").select("project_id").eq("project_id", str(project_id)).execute()
+        result = supabase.table("dossier").select("project_id").eq("project_id", str(project_id)).eq("user_id", str(user_id)).execute()
         
         if not result.data:
             # Create a default dossier/project
             dossier_record = {
                 "project_id": str(project_id),
+                "user_id": str(user_id),
                 "snapshot_json": {
                     "title": "New Project",
                     "logline": "",
