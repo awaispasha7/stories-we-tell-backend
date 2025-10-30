@@ -21,7 +21,7 @@ class RAGService:
         self.user_context_weight = 0.4  # 40% weight on user-specific context
         self.global_context_weight = 0.3  # 30% weight on global patterns (includes image analysis)
         self.document_context_weight = 0.3  # 30% weight on document context
-        self.user_match_count = 6  # Retrieve top 6 similar user messages
+        self.user_match_count = 10  # Retrieve top 10 similar user messages (better recall)
         self.global_match_count = 3  # Retrieve top 3 global patterns (increased for image analysis)
         self.document_match_count = 3  # Retrieve top 3 document chunks
         self.similarity_threshold = 0.1  # Very low threshold for testing
