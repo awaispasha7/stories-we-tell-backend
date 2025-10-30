@@ -195,7 +195,8 @@ async def chat(
                 print(f"⚠️ Failed to store user message embedding: {e}")
         
         # Get conversation history for context (moved outside generate_stream to fix scope issue)
-        conversation_history = await _get_conversation_history(str(session_id), str(user_id))
+        # Fetch last 50 messages for RAG context (good balance between context and performance)
+        conversation_history = await _get_conversation_history(str(session_id), str(user_id), limit=50)
         
         # Process attached image files for DIRECT sending to model (ChatGPT-style)
         image_data_list = []  # List of {"data": bytes, "mime_type": str, "filename": str}
@@ -428,9 +429,10 @@ async def chat(
                     
                     # Update dossier if needed (after both user and assistant messages are saved)
                     # IMPORTANT: re-fetch conversation history so it includes the assistant's reply we just saved
+                    # Fetch ALL messages for dossier (no limit to get complete conversation)
                     updated_conversation_history = conversation_history
                     try:
-                        updated_conversation_history = await _get_conversation_history(str(session_id), str(user_id))
+                        updated_conversation_history = await _get_conversation_history(str(session_id), str(user_id), limit=None)
                         print(f"📋 [DOSSIER CHECK] Conversation history length: {len(updated_conversation_history)}")
                     except Exception as _history_e:
                         print(f"⚠️ Failed to refresh conversation history before dossier update: {_history_e}")
@@ -570,7 +572,8 @@ async def chat(
 
                     # Detect completion and handle wrap-up actions
                     try:
-                        updated_history_for_completion = await _get_conversation_history(str(session_id), str(user_id))
+                        # Fetch all messages to accurately detect story completion
+                        updated_history_for_completion = await _get_conversation_history(str(session_id), str(user_id), limit=None)
                         is_complete = _is_story_completion_text(full_response)
                         if is_complete:
                             print("✅ Story completion detected. Sending email and closing session.")
@@ -869,18 +872,22 @@ async def _save_message(
     supabase.table("chat_messages").insert(message_data).execute()
     return message_id
 
-async def _get_conversation_history(session_id: str, user_id: str, limit: int = 20) -> List[Dict]:
-    """Get conversation history for context"""
+async def _get_conversation_history(session_id: str, user_id: str, limit: int = None) -> List[Dict]:
+    """Get conversation history for context. If limit is None, fetches all messages."""
     supabase = get_supabase_client()
     
-    # Get more messages for better context and ensure user isolation
-    result = supabase.table("chat_messages")\
+    # Build query
+    query = supabase.table("chat_messages")\
         .select("*")\
         .eq("session_id", session_id)\
         .eq("user_id", user_id)\
-        .order("created_at", desc=False)\
-        .limit(limit)\
-        .execute()
+        .order("created_at", desc=False)
+    
+    # Only apply limit if specified
+    if limit is not None:
+        query = query.limit(limit)
+    
+    result = query.execute()
     
     if not result.data:
         return []
