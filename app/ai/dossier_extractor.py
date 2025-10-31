@@ -83,7 +83,7 @@ SCENES (array; include key even if empty):
 - Optional: time_of_day, interior_exterior, tone
 
 Respond ONLY with valid JSON in this exact format:
-{{
+{{{{
     "story_timeframe": "string",
     "story_location": "string", 
     "story_world_type": "Real/Invented-in-our-world/Invented-other-world",
@@ -99,9 +99,9 @@ Respond ONLY with valid JSON in this exact format:
     "runtime": "3-5 minutes",
     "title": "string",
     "logline": "string",
-    "characters": [{"name": "string", "description": "string", "role": "string"}],
-    "scenes": [{"one_liner": "string", "time_of_day": "string", "interior_exterior": "string", "tone": "string"}]
-}}"""
+    "characters": [{{"name": "string", "description": "string", "role": "string"}}],
+    "scenes": [{{"one_liner": "string", "time_of_day": "string", "interior_exterior": "string", "tone": "string"}}]
+}}}}"""
 
         try:
             # Call OpenAI to extract metadata
