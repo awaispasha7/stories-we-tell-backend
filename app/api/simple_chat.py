@@ -453,7 +453,11 @@ async def chat(
                             
                             if should_update:
                                 print(f"📋 Updating dossier for project {project_id}")
+                                print(f"📋 [EXTRACT] Calling dossier_extractor.extract_metadata with {len(updated_conversation_history)} messages")
+                                print(f"📋 [EXTRACT] First 2 messages: {updated_conversation_history[:2] if len(updated_conversation_history) >= 2 else updated_conversation_history}")
                                 new_metadata = await dossier_extractor.extract_metadata(updated_conversation_history)
+                                print(f"📋 [EXTRACT] Extraction complete. Metadata keys: {list(new_metadata.keys())}")
+                                print(f"📋 [EXTRACT] Characters: {len(new_metadata.get('characters', []))}, Scenes: {len(new_metadata.get('scenes', []))}")
 
                                 # Fetch existing dossier FIRST to merge characters/scenes and preserve title
                                 existing_snapshot = {}
