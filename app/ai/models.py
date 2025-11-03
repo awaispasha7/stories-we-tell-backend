@@ -66,7 +66,7 @@ class AIModelManager:
         self.model_mapping = {
             TaskType.CHAT: "gpt-4.1-mini",  # Best price-to-quality for high-traffic chat
             TaskType.DESCRIPTION: "gemini-2.5-pro",  # Latest Pro tier for creative reasoning
-            TaskType.SCRIPT: "claude-sonnet-4.5",  # SOTA for structured long-form writing
+            TaskType.SCRIPT: "claude-sonnet-4-5-20250929",  # Latest Claude Sonnet 4.5 (per Anthropic API docs)
             TaskType.SCENE: "gpt-4.1",  # Flagship for deep text generation
         }
     
@@ -551,8 +551,8 @@ Generate a complete, production-ready video script."""
             # Use Claude Sonnet 4.5 for script generation (SOTA for structured long-form writing)
             if self.claude_available:
                 response = self.claude_client.messages.create(
-                    model="claude-sonnet-4.5",
-                    max_tokens=kwargs.get("max_tokens", 8000),  # Claude 4.5 supports up to 64K tokens out
+                    model="claude-sonnet-4-5-20250929",  # Latest Claude Sonnet 4.5 model (per Anthropic API docs)
+                    max_tokens=kwargs.get("max_tokens", 8000),  # Claude Sonnet 4.5 supports up to 64K tokens out
                     temperature=kwargs.get("temperature", 0.7),
                     messages=[
                         {"role": "user", "content": script_prompt}
@@ -561,7 +561,7 @@ Generate a complete, production-ready video script."""
 
                 return {
                     "response": response.content[0].text,
-                    "model_used": "claude-sonnet-4.5",
+                    "model_used": "claude-sonnet-4-5-20250929",
                     "tokens_used": response.usage.input_tokens + response.usage.output_tokens,
                     "script_type": "video_tutorial",
                     "estimated_duration": "3-5 minutes"
@@ -618,11 +618,11 @@ Generate a complete, production-ready video script."""
                 "tokens_used": response.usage.total_tokens if response.usage else 0
             }
         except Exception as e:
-            # Fallback to Claude Sonnet 4.5 if GPT-4.1 fails
+            # Fallback to Claude Sonnet 4.5 if GPT-4o fails
             if self.claude_available:
                 try:
                     response = self.claude_client.messages.create(
-                        model="claude-sonnet-4.5",
+                        model="claude-sonnet-4-5-20250929",  # Latest Claude Sonnet 4.5 model (per Anthropic API docs)
                         max_tokens=kwargs.get("max_tokens", 3000),
                         temperature=kwargs.get("temperature", 0.8),
                         messages=[
@@ -632,7 +632,7 @@ Generate a complete, production-ready video script."""
 
                     return {
                         "response": response.content[0].text,
-                        "model_used": "claude-sonnet-4.5",
+                        "model_used": "claude-sonnet-4-5-20250929",
                         "tokens_used": response.usage.input_tokens + response.usage.output_tokens
                     }
                 except Exception as claude_error:

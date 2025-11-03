@@ -195,9 +195,13 @@ class EmailService:
                 'html': validation_html
             }
             
-            response = resend.emails.send(email_params)
-            print(f"✅ Validation request sent: {response}")
-            return True
+            response = resend.Emails.send(email_params)
+            if response and response.get('id'):
+                print(f"✅ Validation request sent to {', '.join(internal_emails)} (ID: {response.get('id')})")
+                return True
+            else:
+                print(f"❌ Failed to send validation request - no response ID")
+                return False
             
         except Exception as e:
             print(f"❌ Failed to send validation request: {e}")
