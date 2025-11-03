@@ -74,6 +74,13 @@ except Exception as e:
     print(f"ERROR: Error importing upload router: {e}")
     upload = None
 
+try:
+    from app.api import validation
+    print("SUCCESS: Validation router imported")
+except Exception as e:
+    print(f"ERROR: Error importing validation router: {e}")
+    validation = None
+
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -148,6 +155,13 @@ if simple_users:
     except Exception as e:
         print(f"ERROR: Error including simple users router: {e}")
 
+if validation:
+    try:
+        app.include_router(validation.router, prefix="/api/v1", tags=["validation"])
+        print("SUCCESS: Validation router included")
+    except Exception as e:
+        print(f"ERROR: Error including validation router: {e}")
+
 # Add root route to handle 404 errors
 @app.get("/")
 async def root():
@@ -161,13 +175,14 @@ async def health_check():
         "message": "Backend is running",
         "cors_enabled": True,
         "allowed_origins": ["*"],  # All origins allowed
-        "endpoints": ["/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/dossiers", "/api/v1/admin/extract-knowledge"],
+        "endpoints": ["/dossier", "/transcribe", "/upload", "/api/v1/chat", "/api/v1/sessions", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/dossiers", "/api/v1/validation/queue", "/api/v1/admin/extract-knowledge"],
         "routes_available": {
             "chat_sessions": False,  # Using simplified system
             "auth": auth is not None,
             "transcribe": transcribe is not None,
             "dossier": dossier is not None,
-            "upload": upload is not None
+            "upload": upload is not None,
+            "validation": validation is not None
         },
         "background_workers": {
             "periodic_cleanup": True,

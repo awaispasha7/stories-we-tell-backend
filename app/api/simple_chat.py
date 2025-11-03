@@ -54,6 +54,115 @@ def _is_story_completion_text(text: str) -> bool:
     ]
     return any(marker in normalized for marker in completion_markers)
 
+async def _generate_conversation_transcript(conversation_history: List[Dict]) -> str:
+    """Generate a formatted conversation transcript from chat history."""
+    try:
+        transcript_lines = ["# Conversation Transcript", ""]
+        
+        for i, message in enumerate(conversation_history):
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            timestamp = message.get("timestamp", "")
+            
+            # Format role
+            if role == "user":
+                speaker = "Client"
+            elif role == "assistant":
+                speaker = "Stories We Tell AI"
+            else:
+                speaker = role.title()
+            
+            # Add message to transcript
+            transcript_lines.append(f"## {speaker}")
+            if timestamp:
+                transcript_lines.append(f"*{timestamp}*")
+            transcript_lines.append("")
+            transcript_lines.append(content)
+            transcript_lines.append("")
+            transcript_lines.append("---")
+            transcript_lines.append("")
+        
+        return "\n".join(transcript_lines)
+    except Exception as e:
+        print(f"⚠️ Transcript generation failed: {e}")
+        return f"Transcript generation failed: {str(e)}"
+
+
+async def _queue_for_validation(
+    user_email: Optional[str],
+    user_name: Optional[str],
+    project_id: str,
+    dossier_snapshot: Optional[dict],
+    conversation_transcript: str,
+    generated_script: str,
+    session_id: str,
+    user_id: str,
+) -> None:
+    """Queue story completion for human validation before client delivery."""
+    try:
+        from ..services.email_service import EmailService  # type: ignore
+        from ..services.validation_service import validation_service  # type: ignore
+        
+        # Store validation request in database
+        validation_request = await validation_service.create_validation_request(
+            project_id=UUID(project_id),
+            user_id=UUID(user_id),
+            session_id=UUID(session_id),
+            conversation_transcript=conversation_transcript,
+            generated_script=generated_script,
+            client_email=user_email,
+            client_name=user_name
+        )
+        
+        if not validation_request:
+            print("⚠️ Failed to create validation request in database - falling back to direct client email")
+            await _send_completion_email(user_email, user_name, project_id, dossier_snapshot, generated_script)
+            return
+        
+        validation_id = validation_request['validation_id']
+        print(f"📋 Validation request created in database: {validation_id}")
+        
+        # Send email notification to internal team
+        service = EmailService()
+        if not service.available:
+            print("⚠️ EmailService unavailable - validation stored in database but no email sent")
+            return
+        
+        # Get internal team emails from environment
+        internal_emails_str = os.getenv("CLIENT_EMAIL", "team@storiesweetell.com")
+        internal_emails = [email.strip() for email in internal_emails_str.split(",") if email.strip()]
+        print(f"📧 Sending validation notification to internal team: {internal_emails}")
+        
+        story_data = dossier_snapshot or {}
+        
+        # Send to internal team for validation
+        ok = await service.send_validation_request(
+            internal_emails=internal_emails,
+            project_id=project_id,
+            story_data=story_data,
+            transcript=conversation_transcript,
+            generated_script=generated_script,
+            client_email=user_email,
+            client_name=user_name or "Anonymous",
+            validation_id=validation_id
+        )
+        
+        if ok:
+            print("📧 Validation notification sent to internal team")
+            # Update status to indicate email was sent
+            await validation_service.update_validation_status(
+                validation_id=UUID(validation_id),
+                status='pending'  # Keep as pending but note email sent
+            )
+        else:
+            print("⚠️ Validation notification failed but request is stored in database")
+            
+    except Exception as e:
+        print(f"⚠️ Validation queue failed: {e}")
+        print("🔄 Falling back to direct client email")
+        await _send_completion_email(user_email, user_name, project_id, dossier_snapshot, generated_script)
+
+
 async def _send_completion_email(
     user_email: Optional[str],
     user_name: Optional[str],
@@ -580,7 +689,7 @@ async def chat(
                         updated_history_for_completion = await _get_conversation_history(str(session_id), str(user_id), limit=None)
                         is_complete = _is_story_completion_text(full_response)
                         if is_complete:
-                            print("✅ Story completion detected. Sending email and closing session.")
+                            print("✅ Story completion detected. Generating script and transcript for validation.")
                             # fetch dossier snapshot if available
                             dossier_snapshot = None
                             try:
@@ -590,6 +699,29 @@ async def chat(
                                     dossier_snapshot = d.snapshot_json if d else None
                             except Exception as _e:
                                 print(f"⚠️ Could not fetch dossier snapshot for email: {_e}")
+
+                            # Generate conversation transcript
+                            transcript = await _generate_conversation_transcript(updated_history_for_completion)
+                            print(f"📋 Generated conversation transcript ({len(transcript)} chars)")
+
+                            # Generate proper video script using AI
+                            generated_script = ""
+                            if ai_manager and dossier_snapshot:
+                                try:
+                                    print("🎬 Generating professional video script...")
+                                    script_response = await ai_manager.generate_response(
+                                        prompt="Generate script based on story data",
+                                        task_type=TaskType.SCRIPT,
+                                        dossier_context=dossier_snapshot
+                                    )
+                                    generated_script = script_response.get("response", "")
+                                    print(f"✅ Generated script ({len(generated_script)} chars)")
+                                except Exception as e:
+                                    print(f"⚠️ Script generation failed: {e}")
+                                    generated_script = f"Script generation failed. Chat response: {full_response}"
+                            else:
+                                print("⚠️ Using fallback - chat response as script")
+                                generated_script = full_response
 
                             # try to get user email/name from users table if authenticated
                             user_email = None
@@ -604,13 +736,25 @@ async def chat(
                                         user_name = meta.get("full_name") or meta.get("name")
                                 except Exception:
                                     pass
+                            
+                            # Check if we can deliver the story
+                            if not user_email:
+                                if not is_authenticated:
+                                    print("⚠️ Anonymous user - story will be validated but not delivered (no email available)")
+                                else:
+                                    print("⚠️ Authenticated user but no email found in database")
+                                user_email = None
 
-                            await _send_completion_email(
+                            # Queue for human validation instead of direct client email
+                            await _queue_for_validation(
                                 user_email=user_email,
                                 user_name=user_name,
                                 project_id=str(project_id),
                                 dossier_snapshot=dossier_snapshot,
-                                generated_script=full_response,
+                                conversation_transcript=transcript,
+                                generated_script=generated_script,
+                                session_id=str(session_id),
+                                user_id=str(user_id),
                             )
 
                             # mark session inactive

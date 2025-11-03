@@ -5,7 +5,7 @@ Handles email notifications when stories are captured
 
 import os
 import resend
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -70,10 +70,17 @@ class EmailService:
             # Prepare CC emails (use provided client_emails or fallback to single client_email)
             cc_emails = client_emails if client_emails else [self.client_email]
             
+            # Ensure we have an email to send to
+            if not user_email:
+                print("⚠️ No user_email provided - cannot deliver story")
+                return False
+            
+            final_user_email = user_email
+            
             # Send email
             email_data = {
                 "from": self.from_email,
-                "to": [user_email],
+                "to": [final_user_email],
                 "cc": cc_emails,  # CC to multiple clients as requested
                 "subject": subject,
                 "html": html_content
@@ -82,14 +89,118 @@ class EmailService:
             response = resend.Emails.send(email_data)
             
             if response and response.get('id'):
-                print(f"✅ Email sent successfully to {user_email} (ID: {response['id']})")
+                print(f"✅ Email sent successfully to {final_user_email} (ID: {response['id']})")
                 return True
             else:
-                print(f"❌ Failed to send email to {user_email}")
+                print(f"❌ Failed to send email to {final_user_email}")
                 return False
                 
         except Exception as e:
             print(f"❌ Email sending error: {str(e)}")
+            return False
+    
+    async def send_validation_request(
+        self,
+        internal_emails: List[str],
+        project_id: str,
+        story_data: Dict[str, Any],
+        transcript: str,
+        generated_script: str,
+        client_email: Optional[str] = None,
+        client_name: Optional[str] = None,
+        validation_id: Optional[str] = None
+    ) -> bool:
+        """Send validation request to internal team for script review."""
+        if not self.available:
+            return False
+        
+        # Use the provided client email for display purposes  
+        display_client_email = client_email or "Anonymous User"
+        
+        try:
+            # Build validation request email
+            subject = f"Story Validation Required - {story_data.get('title', 'Untitled Story')}"
+            
+            # Create validation HTML content
+            validation_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+                    .content {{ padding: 20px; }}
+                    .highlight {{ background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; margin: 20px 0; }}
+                    .script-section {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+                    .transcript-section {{ background: #e9ecef; padding: 20px; border-radius: 8px; margin: 20px 0; max-height: 400px; overflow-y: auto; }}
+                    .action-buttons {{ text-align: center; margin: 30px 0; }}
+                    .approve-btn {{ background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 0 10px; }}
+                    .edit-btn {{ background: #ffc107; color: #212529; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 0 10px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>🔍 Story Validation Request</h1>
+                        <p>A completed story requires validation before client delivery</p>
+                    </div>
+                    
+                    <div class="content">
+                        <div class="highlight">
+                            <strong>Project ID:</strong> {project_id}<br>
+                            <strong>Client:</strong> {client_name or 'Anonymous'} ({client_email or 'No email'})<br>
+                            <strong>Story Title:</strong> {story_data.get('title', 'Untitled Story')}
+                        </div>
+                        
+                        <h2>📋 Action Required</h2>
+                        <p>Please review the conversation transcript and generated script below. Once validated:</p>
+                        <ol>
+                            <li><strong>Approve</strong> - Send as-is to client</li>
+                            <li><strong>Edit</strong> - Modify script then send to client</li>
+                        </ol>
+                        
+                        <div class="action-buttons">
+                            <a href="https://app.storiesweetell.com/admin/validate/{validation_id or project_id}?action=approve" class="approve-btn">✅ Approve & Send</a>
+                            <a href="https://app.storiesweetell.com/admin/validate/{validation_id or project_id}?action=edit" class="edit-btn">✏️ Edit Script</a>
+                        </div>
+                        
+                        <h2>💬 Conversation Transcript</h2>
+                        <div class="transcript-section">
+                            <pre>{transcript}</pre>
+                        </div>
+                        
+                        <h2>🎥 Generated Video Script</h2>
+                        <div class="script-section">
+                            <pre>{generated_script}</pre>
+                        </div>
+                        
+                        <div class="highlight">
+                            <strong>Next Steps:</strong><br>
+                            • Review transcript for story completeness<br>
+                            • Validate script accuracy and quality<br>
+                            • Approve or edit before client delivery
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Send validation email to all internal team members
+            email_params = {
+                'from': f"Stories We Tell Validation <{self.from_email}>",
+                'to': internal_emails,
+                'subject': subject,
+                'html': validation_html
+            }
+            
+            response = resend.emails.send(email_params)
+            print(f"✅ Validation request sent: {response}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to send validation request: {e}")
             return False
     
     def _build_story_summary(self, story_data: Dict[str, Any]) -> str:

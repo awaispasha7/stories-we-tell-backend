@@ -1,0 +1,227 @@
+"""
+Validation API endpoints for Stories We Tell
+Handles validation queue management for admin interface
+"""
+
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional, List, Dict, Any
+from uuid import UUID
+from pydantic import BaseModel
+from ..services.validation_service import validation_service
+from ..services.email_service import EmailService
+
+router = APIRouter()
+
+
+class ValidationApprovalRequest(BaseModel):
+    reviewed_by: str
+    review_notes: Optional[str] = None
+
+
+class ValidationRejectionRequest(BaseModel):
+    reviewed_by: str
+    review_notes: str
+
+
+class ValidationUpdateRequest(BaseModel):
+    reviewed_by: str
+    review_notes: Optional[str] = None
+    updated_script: Optional[str] = None
+
+
+@router.get("/validation/queue")
+async def get_validation_queue(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    limit: Optional[int] = Query(50, description="Limit results")
+) -> Dict[str, Any]:
+    """Get validation queue items, optionally filtered by status."""
+    try:
+        if status == "pending" or status is None:
+            validations = await validation_service.get_pending_validations()
+        else:
+            # For now, just return pending. Later can add status filtering
+            validations = await validation_service.get_pending_validations()
+        
+        # Apply limit
+        if limit and len(validations) > limit:
+            validations = validations[:limit]
+        
+        return {
+            "success": True,
+            "validations": validations,
+            "count": len(validations)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch validation queue: {str(e)}")
+
+
+@router.get("/validation/{validation_id}")
+async def get_validation_request(validation_id: str) -> Dict[str, Any]:
+    """Get a specific validation request by ID."""
+    try:
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        return {
+            "success": True,
+            "validation": validation
+        }
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid validation ID format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch validation request: {str(e)}")
+
+
+@router.post("/validation/{validation_id}/approve")
+async def approve_validation(
+    validation_id: str,
+    request: ValidationApprovalRequest
+) -> Dict[str, Any]:
+    """Approve a validation request and send to client."""
+    try:
+        # Approve the validation
+        validation = await validation_service.approve_and_send(
+            validation_id=UUID(validation_id),
+            reviewed_by=request.reviewed_by,
+            review_notes=request.review_notes
+        )
+        
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        # Send to client using existing email service
+        email_service = EmailService()
+        if email_service.available and validation.get('client_email'):
+            try:
+                # Get dossier data for the project
+                from ..database.session_service_supabase import session_service
+                dossier = session_service.get_dossier(
+                    UUID(validation['project_id']), 
+                    UUID(validation['user_id'])
+                )
+                dossier_data = dossier.snapshot_json if dossier else {}
+                
+                success = await email_service.send_story_captured_email(
+                    user_email=validation['client_email'],
+                    user_name=validation['client_name'] or "Writer",
+                    story_data=dossier_data,
+                    generated_script=validation['generated_script'],
+                    project_id=validation['project_id'],
+                    client_emails=None
+                )
+                
+                if success:
+                    # Mark as sent to client
+                    await validation_service.mark_sent_to_client(UUID(validation_id))
+                    
+                    return {
+                        "success": True,
+                        "message": "Validation approved and sent to client",
+                        "validation": validation
+                    }
+                else:
+                    return {
+                        "success": True,
+                        "message": "Validation approved but email failed to send",
+                        "validation": validation,
+                        "email_sent": False
+                    }
+                    
+            except Exception as e:
+                print(f"❌ Error sending client email: {e}")
+                return {
+                    "success": True,
+                    "message": "Validation approved but email failed to send",
+                    "validation": validation,
+                    "email_error": str(e)
+                }
+        else:
+            return {
+                "success": True,
+                "message": "Validation approved (no client email to send)",
+                "validation": validation
+            }
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid validation ID format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to approve validation: {str(e)}")
+
+
+@router.post("/validation/{validation_id}/reject")
+async def reject_validation(
+    validation_id: str,
+    request: ValidationRejectionRequest
+) -> Dict[str, Any]:
+    """Reject a validation request with notes."""
+    try:
+        success = await validation_service.reject_validation(
+            validation_id=UUID(validation_id),
+            reviewed_by=request.reviewed_by,
+            review_notes=request.review_notes
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        return {
+            "success": True,
+            "message": "Validation rejected"
+        }
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid validation ID format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reject validation: {str(e)}")
+
+
+@router.put("/validation/{validation_id}")
+async def update_validation(
+    validation_id: str,
+    request: ValidationUpdateRequest
+) -> Dict[str, Any]:
+    """Update validation request (e.g., edit script)."""
+    try:
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='in_review',
+            reviewed_by=request.reviewed_by,
+            review_notes=request.review_notes,
+            updated_script=request.updated_script
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        # Get updated validation
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        
+        return {
+            "success": True,
+            "message": "Validation updated",
+            "validation": validation
+        }
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid validation ID format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update validation: {str(e)}")
+
+
+@router.get("/validation/stats")
+async def get_validation_stats() -> Dict[str, Any]:
+    """Get validation queue statistics."""
+    try:
+        stats = await validation_service.get_validation_stats()
+        
+        return {
+            "success": True,
+            "stats": stats
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch validation stats: {str(e)}")
