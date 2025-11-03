@@ -65,12 +65,25 @@ class ValidationService:
         try:
             result = self.supabase.table('validation_queue').select(
                 '*'
-            ).eq('status', 'pending').order('created_at', desc=False).execute()
+            ).order('created_at', desc=True).execute()
             
             return result.data if result.data else []
             
         except Exception as e:
             print(f"❌ Error fetching pending validations: {e}")
+            return []
+    
+    async def get_validations_by_status(self, status: str) -> List[Dict[str, Any]]:
+        """Get validation requests filtered by status."""
+        try:
+            result = self.supabase.table('validation_queue').select(
+                '*'
+            ).eq('status', status).order('created_at', desc=True).execute()
+            
+            return result.data if result.data else []
+            
+        except Exception as e:
+            print(f"❌ Error fetching validations by status {status}: {e}")
             return []
     
     async def get_validation_by_id(self, validation_id: UUID) -> Optional[Dict[str, Any]]:
@@ -191,42 +204,62 @@ class ValidationService:
             print(f"❌ Error marking validation {validation_id} as sent: {e}")
             return False
     
-    async def get_validation_stats(self) -> Dict[str, int]:
+    async def get_validation_stats(self) -> Dict[str, Any]:
         """Get validation queue statistics."""
         try:
             # Get counts by status
             result = self.supabase.table('validation_queue').select(
-                'status'
+                'status, created_at'
             ).execute()
             
+            all_validations = result.data if result.data else []
+            
             stats = {
-                'pending': 0,
-                'in_review': 0,
-                'approved': 0,
-                'rejected': 0,
-                'sent_to_client': 0,
-                'failed': 0,
-                'total': len(result.data) if result.data else 0
+                'total_requests': len(all_validations),
+                'pending_count': 0,
+                'in_review_count': 0,
+                'approved_count': 0,
+                'rejected_count': 0,
+                'sent_count': 0,
+                'avg_review_time': 'N/A',
+                'today_requests': 0
             }
             
-            if result.data:
-                for record in result.data:
-                    status = record.get('status', 'unknown')
-                    if status in stats:
-                        stats[status] += 1
+            # Count by status
+            for record in all_validations:
+                status = record.get('status', 'unknown')
+                if status == 'pending':
+                    stats['pending_count'] += 1
+                elif status == 'in_review':
+                    stats['in_review_count'] += 1
+                elif status == 'approved':
+                    stats['approved_count'] += 1
+                elif status == 'rejected':
+                    stats['rejected_count'] += 1
+                elif status == 'sent_to_client':
+                    stats['sent_count'] += 1
+            
+            # Count today's requests
+            from datetime import date
+            today = date.today().isoformat()
+            stats['today_requests'] = sum(
+                1 for r in all_validations 
+                if r.get('created_at', '').startswith(today)
+            )
             
             return stats
             
         except Exception as e:
             print(f"❌ Error fetching validation stats: {e}")
             return {
-                'pending': 0,
-                'in_review': 0,
-                'approved': 0,
-                'rejected': 0,
-                'sent_to_client': 0,
-                'failed': 0,
-                'total': 0
+                'total_requests': 0,
+                'pending_count': 0,
+                'in_review_count': 0,
+                'approved_count': 0,
+                'rejected_count': 0,
+                'sent_count': 0,
+                'avg_review_time': 'N/A',
+                'today_requests': 0
             }
 
 

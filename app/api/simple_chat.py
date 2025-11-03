@@ -46,13 +46,23 @@ def _is_story_completion_text(text: str) -> bool:
         "the story is complete",
         "your story is complete",
         "story is complete",
+        "story complete",
         "we've reached the end",
         "the end of the story",
         "conclusion of the story",
-        "would you like to create another story",
+        "would you like to create another story",  # Matches: "Would you like to create another story?"
         "would you like to start another story",
+        "would you like to begin another story",
+        "new story",
+        "start a new story",
+        "create another story",
+        "sign up to create unlimited",  # Matches: "Sign up to create unlimited stories..."
+        "create unlimited stories",  # Additional variant
     ]
-    return any(marker in normalized for marker in completion_markers)
+    result = any(marker in normalized for marker in completion_markers)
+    if result:
+        print(f"🎯 [COMPLETION] Detected completion marker in: {text[:200]}...")
+    return result
 
 async def _generate_conversation_transcript(conversation_history: List[Dict]) -> str:
     """Generate a formatted conversation transcript from chat history."""
@@ -100,10 +110,19 @@ async def _queue_for_validation(
 ) -> None:
     """Queue story completion for human validation before client delivery."""
     try:
+        print(f"📋 [VALIDATION] Starting validation queue process...")
+        print(f"📋 [VALIDATION] Project ID: {project_id}")
+        print(f"📋 [VALIDATION] User ID: {user_id}")
+        print(f"📋 [VALIDATION] Session ID: {session_id}")
+        print(f"📋 [VALIDATION] User Email: {user_email}")
+        print(f"📋 [VALIDATION] Transcript length: {len(conversation_transcript)} chars")
+        print(f"📋 [VALIDATION] Script length: {len(generated_script)} chars")
+        
         from ..services.email_service import EmailService  # type: ignore
         from ..services.validation_service import validation_service  # type: ignore
         
         # Store validation request in database
+        print(f"📋 [VALIDATION] Creating validation request in database...")
         validation_request = await validation_service.create_validation_request(
             project_id=UUID(project_id),
             user_id=UUID(user_id),
@@ -115,12 +134,12 @@ async def _queue_for_validation(
         )
         
         if not validation_request:
-            print("⚠️ Failed to create validation request in database - falling back to direct client email")
+            print("⚠️ [VALIDATION] Failed to create validation request in database - falling back to direct client email")
             await _send_completion_email(user_email, user_name, project_id, dossier_snapshot, generated_script)
             return
         
         validation_id = validation_request['validation_id']
-        print(f"📋 Validation request created in database: {validation_id}")
+        print(f"✅ [VALIDATION] Validation request created in database: {validation_id}")
         
         # Send email notification to internal team
         service = EmailService()
@@ -687,7 +706,11 @@ async def chat(
                     try:
                         # Fetch all messages to accurately detect story completion
                         updated_history_for_completion = await _get_conversation_history(str(session_id), str(user_id), limit=None)
+                        print(f"🔍 [COMPLETION CHECK] Checking story completion...")
+                        print(f"🔍 [COMPLETION CHECK] Response length: {len(full_response)} chars")
+                        print(f"🔍 [COMPLETION CHECK] Response preview: {full_response[:300]}...")
                         is_complete = _is_story_completion_text(full_response)
+                        print(f"🔍 [COMPLETION CHECK] Is complete: {is_complete}")
                         if is_complete:
                             print("✅ Story completion detected. Generating script and transcript for validation.")
                             # fetch dossier snapshot if available
@@ -729,12 +752,17 @@ async def chat(
                             if is_authenticated:
                                 try:
                                     supabase = get_supabase_client()
-                                    res = supabase.table("users").select("email, raw_user_meta_data").eq("id", str(user_id)).limit(1).execute()
-                                    if res.data:
+                                    print(f"📧 [VALIDATION] Fetching user email for user_id: {user_id}")
+                                    # Fix: Use 'user_id' not 'id' - matches schema
+                                    res = supabase.table("users").select("email, display_name").eq("user_id", str(user_id)).limit(1).execute()
+                                    if res.data and len(res.data) > 0:
                                         user_email = res.data[0].get("email")
-                                        meta = res.data[0].get("raw_user_meta_data") or {}
-                                        user_name = meta.get("full_name") or meta.get("name")
-                                except Exception:
+                                        user_name = res.data[0].get("display_name")
+                                        print(f"📧 [VALIDATION] Found user email: {user_email}, name: {user_name}")
+                                    else:
+                                        print(f"⚠️ [VALIDATION] No user found with user_id: {user_id}")
+                                except Exception as e:
+                                    print(f"❌ [VALIDATION] Error fetching user email: {e}")
                                     pass
                             
                             # Check if we can deliver the story
@@ -746,16 +774,22 @@ async def chat(
                                 user_email = None
 
                             # Queue for human validation instead of direct client email
-                            await _queue_for_validation(
-                                user_email=user_email,
-                                user_name=user_name,
-                                project_id=str(project_id),
-                                dossier_snapshot=dossier_snapshot,
-                                conversation_transcript=transcript,
-                                generated_script=generated_script,
-                                session_id=str(session_id),
-                                user_id=str(user_id),
-                            )
+                            try:
+                                await _queue_for_validation(
+                                    user_email=user_email,
+                                    user_name=user_name,
+                                    project_id=str(project_id),
+                                    dossier_snapshot=dossier_snapshot,
+                                    conversation_transcript=transcript,
+                                    generated_script=generated_script,
+                                    session_id=str(session_id),
+                                    user_id=str(user_id),
+                                )
+                                print("✅ [VALIDATION] Successfully queued story for validation")
+                            except Exception as validation_error:
+                                print(f"❌ [VALIDATION] CRITICAL ERROR queuing for validation: {validation_error}")
+                                import traceback
+                                print(f"❌ [VALIDATION] Traceback: {traceback.format_exc()}")
 
                             # mark session inactive
                             try:
