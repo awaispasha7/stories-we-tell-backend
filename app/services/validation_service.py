@@ -221,11 +221,12 @@ class ValidationService:
                 'approved_count': 0,
                 'rejected_count': 0,
                 'sent_count': 0,
+                'failed_count': 0,  # Track failed status from schema
                 'avg_review_time': 'N/A',
                 'today_requests': 0
             }
             
-            # Count by status
+            # Count by status (matches schema CHECK constraint: pending, in_review, approved, rejected, sent_to_client, failed)
             for record in all_validations:
                 status = record.get('status', 'unknown')
                 if status == 'pending':
@@ -238,6 +239,8 @@ class ValidationService:
                     stats['rejected_count'] += 1
                 elif status == 'sent_to_client':
                     stats['sent_count'] += 1
+                elif status == 'failed':
+                    stats['failed_count'] += 1
             
             # Count today's requests
             from datetime import date
@@ -258,6 +261,7 @@ class ValidationService:
                 'approved_count': 0,
                 'rejected_count': 0,
                 'sent_count': 0,
+                'failed_count': 0,
                 'avg_review_time': 'N/A',
                 'today_requests': 0
             }
