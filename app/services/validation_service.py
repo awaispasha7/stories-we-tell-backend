@@ -61,16 +61,27 @@ class ValidationService:
             return None
     
     async def get_pending_validations(self) -> List[Dict[str, Any]]:
-        """Get all pending validation requests."""
+        """Get all validation requests (returns all, not just pending - name is legacy)."""
         try:
             result = self.supabase.table('validation_queue').select(
                 '*'
             ).order('created_at', desc=True).execute()
             
+            print(f"📊 [VALIDATION SERVICE] Fetched {len(result.data) if result.data else 0} total validations")
+            if result.data:
+                # Log status breakdown for debugging
+                status_counts = {}
+                for r in result.data:
+                    s = r.get('status', 'unknown')
+                    status_counts[s] = status_counts.get(s, 0) + 1
+                print(f"📊 [VALIDATION SERVICE] Status breakdown: {status_counts}")
+            
             return result.data if result.data else []
             
         except Exception as e:
-            print(f"❌ Error fetching pending validations: {e}")
+            print(f"❌ Error fetching validations: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
             return []
     
     async def get_validations_by_status(self, status: str) -> List[Dict[str, Any]]:
@@ -213,6 +224,7 @@ class ValidationService:
             ).execute()
             
             all_validations = result.data if result.data else []
+            print(f"📊 [STATS] Total validations in database: {len(all_validations)}")
             
             stats = {
                 'total_requests': len(all_validations),
@@ -241,6 +253,8 @@ class ValidationService:
                     stats['sent_count'] += 1
                 elif status == 'failed':
                     stats['failed_count'] += 1
+            
+            print(f"📊 [STATS] Calculated counts: {stats}")
             
             # Count today's requests
             from datetime import date

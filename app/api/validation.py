@@ -39,19 +39,25 @@ async def get_validation_queue(
     try:
         # Get validations based on status filter
         if status and status != "all":
+            # Filter by specific status
             validations = await validation_service.get_validations_by_status(status)
         else:
-            validations = await validation_service.get_pending_validations()
+            # Get all validations (not just pending) when status is "all" or not provided
+            validations = await validation_service.get_pending_validations()  # This method actually returns ALL validations
         
         # Apply limit
         if limit and len(validations) > limit:
             validations = validations[:limit]
+        
+        print(f"📊 [API] Returning {len(validations)} validations (status filter: {status or 'all'})")
         
         # Return list directly (frontend expects array)
         return validations
         
     except Exception as e:
         print(f"❌ Error fetching validation queue: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch validation queue: {str(e)}")
 
 
@@ -311,9 +317,10 @@ async def update_validation(
 ) -> Dict[str, Any]:
     """Update validation request (e.g., edit script)."""
     try:
+        # Keep status as pending when script is updated (removed in_review status)
         success = await validation_service.update_validation_status(
             validation_id=UUID(validation_id),
-            status='in_review',
+            status='pending',  # Keep as pending - admin can view by opening
             reviewed_by=request.reviewed_by,
             review_notes=request.review_notes,
             updated_script=request.updated_script
@@ -352,7 +359,7 @@ async def update_validation_script(
         # Update script using validation service
         success = await validation_service.update_validation_status(
             validation_id=UUID(validation_id),
-            status='in_review',  # Move to in_review when script is updated
+            status='pending',  # Keep as pending - admin can view by opening (removed in_review status)
             reviewed_by=x_user_id or "admin",
             review_notes="Script updated",
             updated_script=request.generated_script
