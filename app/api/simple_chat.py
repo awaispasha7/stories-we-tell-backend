@@ -706,11 +706,24 @@ async def chat(
                     try:
                         # Fetch all messages to accurately detect story completion
                         updated_history_for_completion = await _get_conversation_history(str(session_id), str(user_id), limit=None)
+                        message_count = len(updated_history_for_completion) if updated_history_for_completion else 0
+                        
+                        # Only check for completion if we have enough conversation history
+                        # This prevents false positives from first messages that might contain phrases like "new story"
+                        MIN_MESSAGES_FOR_COMPLETION = 6  # At least 3 user + 3 assistant messages
+                        
                         print(f"🔍 [COMPLETION CHECK] Checking story completion...")
+                        print(f"🔍 [COMPLETION CHECK] Total messages in conversation: {message_count}")
                         print(f"🔍 [COMPLETION CHECK] Response length: {len(full_response)} chars")
                         print(f"🔍 [COMPLETION CHECK] Response preview: {full_response[:300]}...")
-                        is_complete = _is_story_completion_text(full_response)
-                        print(f"🔍 [COMPLETION CHECK] Is complete: {is_complete}")
+                        
+                        is_complete = False
+                        if message_count < MIN_MESSAGES_FOR_COMPLETION:
+                            print(f"⏭️ [COMPLETION CHECK] Skipping completion check - only {message_count} messages (minimum {MIN_MESSAGES_FOR_COMPLETION} required)")
+                        else:
+                            is_complete = _is_story_completion_text(full_response)
+                            print(f"🔍 [COMPLETION CHECK] Is complete: {is_complete}")
+                        
                         if is_complete:
                             print("✅ Story completion detected. Generating script and transcript for validation.")
                             # fetch dossier snapshot if available
