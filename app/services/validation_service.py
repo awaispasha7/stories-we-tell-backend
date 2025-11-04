@@ -218,18 +218,24 @@ class ValidationService:
     async def get_validation_stats(self) -> Dict[str, Any]:
         """Get validation queue statistics."""
         try:
+            # Verify Supabase client is available
+            if not self.supabase:
+                print("❌ [STATS] Supabase client not initialized")
+                raise Exception("Supabase client not initialized")
+            
             # Get counts by status
+            print(f"📊 [STATS] Querying validation_queue table...")
             result = self.supabase.table('validation_queue').select(
                 'status, created_at'
             ).execute()
             
+            print(f"📊 [STATS] Query result: {result}")
             all_validations = result.data if result.data else []
             print(f"📊 [STATS] Total validations in database: {len(all_validations)}")
             
             stats = {
                 'total_requests': len(all_validations),
                 'pending_count': 0,
-                'in_review_count': 0,
                 'approved_count': 0,
                 'rejected_count': 0,
                 'sent_count': 0,
@@ -239,12 +245,12 @@ class ValidationService:
             }
             
             # Count by status (matches schema CHECK constraint: pending, in_review, approved, rejected, sent_to_client, failed)
+            # Note: in_review records are counted as pending for display purposes
             for record in all_validations:
                 status = record.get('status', 'unknown')
-                if status == 'pending':
+                if status == 'pending' or status == 'in_review':
+                    # Count in_review as pending (removed in_review status from UI)
                     stats['pending_count'] += 1
-                elif status == 'in_review':
-                    stats['in_review_count'] += 1
                 elif status == 'approved':
                     stats['approved_count'] += 1
                 elif status == 'rejected':
@@ -268,10 +274,11 @@ class ValidationService:
             
         except Exception as e:
             print(f"❌ Error fetching validation stats: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
             return {
                 'total_requests': 0,
                 'pending_count': 0,
-                'in_review_count': 0,
                 'approved_count': 0,
                 'rejected_count': 0,
                 'sent_count': 0,
