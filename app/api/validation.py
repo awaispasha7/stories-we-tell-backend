@@ -61,6 +61,24 @@ async def get_validation_queue(
         raise HTTPException(status_code=500, detail=f"Failed to fetch validation queue: {str(e)}")
 
 
+@router.get("/validation/stats")
+async def get_validation_stats() -> Dict[str, Any]:
+    """Get validation queue statistics."""
+    try:
+        print(f"📊 [STATS API] Fetching validation stats...")
+        stats = await validation_service.get_validation_stats()
+        print(f"📊 [STATS API] Stats retrieved: {stats}")
+        
+        # Return stats directly (frontend expects the stats object)
+        return stats
+        
+    except Exception as e:
+        print(f"❌ [STATS API] Error fetching validation stats: {e}")
+        import traceback
+        print(f"❌ [STATS API] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch validation stats: {str(e)}")
+
+
 @router.get("/validation/{validation_id}")
 async def get_validation_request(validation_id: str) -> Dict[str, Any]:
     """Get a specific validation request by ID."""
@@ -380,9 +398,7 @@ async def update_validation_script(
 
 
 @router.get("/validation/stats")
-async def get_validation_stats(
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
-) -> Dict[str, Any]:
+async def get_validation_stats() -> Dict[str, Any]:
     """Get validation queue statistics."""
     try:
         print(f"📊 [STATS API] Fetching validation stats...")
