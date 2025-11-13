@@ -1,19 +1,68 @@
 # Backend - Stories We Tell API
 
-A FastAPI-based backend service for the Stories We Tell cinematic intake chatbot application.
+A FastAPI-based backend service for the Stories We Tell cinematic intake chatbot application. Provides intelligent AI-powered story development with conversation management, dossier extraction, and multi-user support.
 
-## Features
+## ✨ Key Features
 
-- **FastAPI REST API** with automatic OpenAPI documentation
-- **Supabase Integration** for database operations
-- **Multi-Model AI System** with intelligent model selection:
-  - **Chat**: GPT-5 mini
-  - **Descriptions**: Google Gemini Pro
-  - **Scripts**: GPT-5
-  - **Scenes**: Claude 3 Sonnet
-- **Structured Data Models** using Pydantic
-- **Environment Configuration** with .env support
-- **Auto-reload Development Server**
+### 🤖 AI-Powered Story Development
+- **Multi-Model LLM System**: Intelligent routing to specialized AI models
+  - **Chat**: GPT-4o-mini for conversational story development
+  - **Dossier Extraction**: GPT-4o for intelligent story element extraction
+  - **Context-Aware Responses**: Full conversation history for coherent storytelling
+- **Streaming Responses**: Real-time Server-Sent Events (SSE) for instant feedback
+- **Smart Dossier Generation**: AI decides when to extract story elements based on conversation flow
+- **Conversation Memory**: Persistent chat history across sessions
+
+### 📊 Story Dossier System
+- **Automatic Extraction**: Intelligently extracts story elements from conversations:
+  - **Characters**: Names, descriptions, relationships, character arcs
+  - **Themes**: Central themes and motifs
+  - **Locations**: Settings, environments, and places
+  - **Plot Points**: Story structure and key beats
+- **Smart Update Logic**: Only updates dossier when meaningful new information is added
+- **Structured JSON Storage**: Clean, queryable story data format
+- **Project-Based Organization**: Each story has its own dossier linked to project_id
+
+### 💬 Session & User Management
+- **Multi-User Support**: Full user authentication and authorization
+- **Session Persistence**: Conversations saved and retrievable across devices
+- **Anonymous Sessions**: Support for unauthenticated users with session migration
+- **Session Migration**: Seamlessly transfer anonymous sessions to authenticated accounts
+- **Chat History**: Complete message history with timestamps and metadata
+- **Active Session Tracking**: Smart session lifecycle management
+
+### 🗄️ Database & Storage
+- **Supabase Integration**: PostgreSQL database with real-time capabilities
+- **Efficient Queries**: Optimized database queries for fast retrieval
+- **Data Models**:
+  - `users`: User profiles and authentication
+  - `chat_sessions`: Conversation sessions with metadata
+  - `messages`: Individual chat messages with turn tracking
+  - `dossiers`: Story element storage with versioning
+  - `projects`: Project-level organization
+- **Automatic Timestamps**: Created/updated tracking for all records
+- **Data Integrity**: Foreign key constraints and validation
+
+### 🔐 Authentication & Security
+- **Supabase Auth Integration**: Secure JWT-based authentication
+- **User ID Validation**: Request-level user identification
+- **Protected Endpoints**: Authorization checks on sensitive operations
+- **CORS Configuration**: Secure cross-origin resource sharing
+- **Environment-Based Secrets**: Secure API key management
+
+### 🚀 Performance & Scalability
+- **Async/Await**: Non-blocking I/O for high concurrency
+- **Streaming API**: Memory-efficient response streaming
+- **Connection Pooling**: Efficient database connection management
+- **Error Handling**: Comprehensive error catching and logging
+- **Logging System**: Detailed debugging and monitoring logs
+
+### 🛠️ Developer Experience
+- **FastAPI Framework**: Modern Python web framework with automatic docs
+- **Type Safety**: Full Pydantic models with validation
+- **Auto-Generated API Docs**: Interactive Swagger UI and ReDoc
+- **Hot Reload**: Automatic server restart on code changes
+- **Structured Logging**: Console logging for debugging
 
 ## Prerequisites
 
@@ -97,100 +146,220 @@ Once the server is running, you can access:
 
 ## API Endpoints
 
-### Chat Endpoint
+### Chat & Messaging
 
-**POST** `/chat`
+#### **POST** `/chat`
 
-Send a chat message and receive a response using GPT-5 mini.
+Stream AI chat responses with automatic dossier extraction. Uses Server-Sent Events (SSE) for real-time streaming.
 
 **Request Body:**
 ```json
 {
-  "text": "Your message here"
+  "text": "Tell me about John, a detective in 1940s Los Angeles",
+  "session_id": "uuid-optional",
+  "project_id": "uuid-optional",
+  "user_id": "uuid-optional"
+}
+```
+
+**Response (SSE Stream):**
+```
+data: {"type": "text", "content": "John is "}
+data: {"type": "text", "content": "a hardboiled detective..."}
+data: {"type": "metadata", "metadata": {"session_id": "uuid", "project_id": "uuid"}}
+data: {"type": "done"}
+```
+
+**Headers:**
+- `x-user-id`: User ID for authenticated requests (optional)
+
+### Session Management
+
+#### **GET** `/sessions`
+
+Get all active sessions for the authenticated user.
+
+**Response:**
+```json
+[
+  {
+    "session_id": "uuid",
+    "user_id": "uuid",
+    "project_id": "uuid",
+    "title": "Detective Story",
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T12:00:00Z",
+    "last_message_at": "2024-01-01T12:00:00Z",
+    "is_active": true,
+    "message_count": 15
+  }
+]
+```
+
+#### **GET** `/sessions/{session_id}/messages`
+
+Get message history for a specific session.
+
+**Query Parameters:**
+- `limit`: Number of messages to retrieve (default: 50)
+- `offset`: Pagination offset (default: 0)
+
+**Response:**
+```json
+[
+  {
+    "message_id": "uuid",
+    "session_id": "uuid",
+    "role": "user",
+    "content": "Tell me about John",
+    "created_at": "2024-01-01T12:00:00Z"
+  },
+  {
+    "message_id": "uuid",
+    "session_id": "uuid",
+    "role": "assistant",
+    "content": "John is a detective...",
+    "created_at": "2024-01-01T12:00:01Z"
+  }
+]
+```
+
+#### **DELETE** `/sessions/{session_id}`
+
+Delete (deactivate) a session.
+
+**Response:**
+```json
+{
+  "message": "Session deleted successfully"
+}
+```
+
+#### **POST** `/sessions/migrate`
+
+Migrate an anonymous session to an authenticated user.
+
+**Request Body:**
+```json
+{
+  "temp_user_id": "anonymous-uuid",
+  "permanent_user_id": "authenticated-uuid"
+}
+```
+
+### User Management
+
+#### **POST** `/users`
+
+Create or update a user profile.
+
+**Request Body:**
+```json
+{
+  "user_id": "uuid",
+  "email": "user@example.com",
+  "display_name": "John Doe",
+  "avatar_url": "https://example.com/avatar.jpg"
 }
 ```
 
 **Response:**
 ```json
 {
-  "reply": "AI-generated response",
-  "metadata_json": {
-    "turn_id": "uuid",
-    "project_id": "uuid", 
-    "raw_text": "original message",
-    "normalized": {
-      "text": "processed text",
-      "metadata": "structured data",
-      "ai_model": "gpt-5-mini",
-      "tokens_used": 150
-    }
+  "user_id": "uuid",
+  "email": "user@example.com",
+  "display_name": "John Doe",
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+### Dossier Management
+
+#### **GET** `/dossier/{project_id}`
+
+Get the story dossier for a specific project.
+
+**Response:**
+```json
+{
+  "project_id": "uuid",
+  "user_id": "uuid",
+  "snapshot_json": {
+    "characters": [
+      {
+        "name": "John",
+        "description": "A hardboiled detective in 1940s LA",
+        "relationships": ["Partner with Sarah"],
+        "character_arc": "Learns to trust again"
+      }
+    ],
+    "themes": ["Justice", "Redemption", "Trust"],
+    "locations": ["Los Angeles", "Detective Office"],
+    "plot_points": ["John meets a mysterious client", "discovers corruption"]
+  },
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T12:00:00Z"
+}
+```
+
+#### **GET** `/dossier`
+
+Get all dossiers for the authenticated user.
+
+**Response:**
+```json
+[
+  {
+    "project_id": "uuid",
+    "title": "Detective Story",
+    "character_count": 5,
+    "theme_count": 3,
+    "updated_at": "2024-01-01T12:00:00Z"
+  }
+]
+```
+
+#### **POST** `/dossier`
+
+Create a new dossier.
+
+**Request Body:**
+```json
+{
+  "project_id": "uuid",
+  "snapshot_json": {
+    "characters": [],
+    "themes": [],
+    "locations": [],
+    "plot_points": []
   }
 }
 ```
 
-### Description Generation
+#### **PUT** `/dossier/{project_id}`
 
-**POST** `/generate-description`
-
-Generate detailed descriptions using Google Gemini Pro.
+Update an existing dossier.
 
 **Request Body:**
 ```json
 {
-  "text": "Describe a mysterious forest scene"
+  "snapshot_json": {
+    "characters": [...],
+    "themes": [...],
+    "locations": [...],
+    "plot_points": [...]
+  }
 }
 ```
+
+#### **DELETE** `/dossier/{project_id}`
+
+Delete a dossier.
 
 **Response:**
 ```json
 {
-  "description": "Detailed description generated by Gemini",
-  "model_used": "gemini-pro",
-  "tokens_used": 200
-}
-```
-
-### Script Generation
-
-**POST** `/generate-script`
-
-Generate scripts using GPT-5.
-
-**Request Body:**
-```json
-{
-  "text": "Write a dialogue between two characters"
-}
-```
-
-**Response:**
-```json
-{
-  "script": "Generated script content",
-  "model_used": "gpt-5",
-  "tokens_used": 500
-}
-```
-
-### Scene Generation
-
-**POST** `/generate-scene`
-
-Generate detailed scenes using Claude 3 Sonnet.
-
-**Request Body:**
-```json
-{
-  "text": "Create a dramatic confrontation scene"
-}
-```
-
-**Response:**
-```json
-{
-  "scene": "Detailed scene description",
-  "model_used": "claude-3-sonnet-20240229",
-  "tokens_used": 400
+  "message": "Dossier deleted successfully"
 }
 ```
 
@@ -201,48 +370,157 @@ Generate detailed scenes using Claude 3 Sonnet.
 backend/
 ├── app/
 │   ├── ai/
-│   │   └── models.py        # AI model management system
+│   │   ├── llm_service.py           # LLM service abstraction
+│   │   ├── dossier_extractor.py    # Story element extraction logic
+│   │   └── prompts.py               # AI prompt templates
 │   ├── api/
-│   │   └── chat.py          # Chat and generation API endpoints
+│   │   ├── chat.py                  # Chat streaming endpoint
+│   │   ├── chat_sessions.py         # Session management endpoints
+│   │   ├── dossier.py               # Dossier CRUD endpoints
+│   │   └── users.py                 # User management endpoints
 │   ├── database/
-│   │   ├── supabase.py      # Supabase client configuration
+│   │   ├── supabase_client.py       # Supabase client singleton
+│   │   ├── session_service_supabase.py  # Session DB operations
 │   │   └── supabase/
-│   │       └── migrations/  # Database migration files
-│   ├── main.py              # FastAPI application entry point
-│   └── models.py            # Pydantic data models
-├── .env                     # Environment variables (create this)
-├── requirements.txt         # Python dependencies
-└── README.md               # This file
+│   │       └── migrations/          # Database migration SQL files
+│   ├── models/
+│   │   ├── chat.py                  # Chat request/response models
+│   │   ├── session.py               # Session data models
+│   │   ├── dossier.py               # Dossier data models
+│   │   └── user.py                  # User data models
+│   ├── utils/
+│   │   ├── auth.py                  # Authentication utilities
+│   │   └── logging.py               # Logging configuration
+│   ├── main.py                      # FastAPI application entry point
+│   └── config.py                    # Configuration management
+├── .env                             # Environment variables (create this)
+├── requirements.txt                 # Python dependencies
+└── README.md                        # This file
 ```
 
 ## Data Models
 
-### ChatRequest
-- `text: str` - The user's input message
+### Chat Models
 
-### ChatResponse  
-- `reply: str` - The AI-generated response
-- `metadata_json: Dict[str, Any]` - Structured metadata about the conversation
+#### ChatRequest
+```python
+{
+  "text": str,                    # User's message
+  "session_id": Optional[str],    # Session identifier
+  "project_id": Optional[str],    # Project identifier
+  "user_id": Optional[str]        # User identifier
+}
+```
 
-### SubmissionMetadata
-- `turn_id: str` - Unique identifier for the conversation turn
-- `project_id: str` - Project identifier
-- `raw_text: str` - Original user input
-- `normalized: Dict[str, Any]` - Processed and structured data
+#### ChatMessage
+```python
+{
+  "message_id": str,              # Unique message ID
+  "session_id": str,              # Session this message belongs to
+  "turn_id": Optional[str],       # Conversation turn ID
+  "role": str,                    # "user" or "assistant"
+  "content": str,                 # Message text
+  "metadata": Optional[dict],     # Additional metadata
+  "created_at": datetime,         # Message timestamp
+  "updated_at": datetime          # Last update timestamp
+}
+```
 
-### SceneMetadata
-- `scene_id: str` - Unique scene identifier
-- `description: Optional[str]` - Scene description
-- `interior_exterior: Optional[str]` - Location type
-- `time_of_day: Optional[str]` - Time setting
-- `tone: Optional[str]` - Scene tone/mood
+### Session Models
 
-### Dossier
-- `title: Optional[str]` - Project title
-- `logline: Optional[str]` - Story logline
-- `genre: Optional[str]` - Story genre
-- `tone: Optional[str]` - Overall tone
-- `scenes: List[SceneMetadata]` - List of scenes
+#### ChatSession
+```python
+{
+  "session_id": str,              # Unique session ID
+  "user_id": str,                 # Owner user ID
+  "project_id": str,              # Associated project ID
+  "title": str,                   # Session title
+  "created_at": datetime,         # Creation timestamp
+  "updated_at": datetime,         # Last update timestamp
+  "last_message_at": datetime,    # Last message timestamp
+  "is_active": bool,              # Session status
+  "message_count": int            # Total messages in session
+}
+```
+
+#### SessionMigrationRequest
+```python
+{
+  "temp_user_id": str,            # Anonymous user ID
+  "permanent_user_id": str        # Authenticated user ID
+}
+```
+
+### User Models
+
+#### User
+```python
+{
+  "user_id": str,                 # Unique user ID (from Supabase Auth)
+  "email": str,                   # User email
+  "display_name": Optional[str],  # Display name
+  "avatar_url": Optional[str],    # Profile picture URL
+  "created_at": datetime,         # Account creation timestamp
+  "updated_at": datetime          # Last update timestamp
+}
+```
+
+### Dossier Models
+
+#### StoryDossier
+```python
+{
+  "project_id": str,              # Associated project ID
+  "user_id": str,                 # Owner user ID
+  "snapshot_json": {              # Story elements
+    "characters": List[Character],
+    "themes": List[str],
+    "locations": List[str],
+    "plot_points": List[str]
+  },
+  "created_at": datetime,         # Creation timestamp
+  "updated_at": datetime          # Last update timestamp
+}
+```
+
+#### Character
+```python
+{
+  "name": str,                    # Character name
+  "description": str,             # Character description
+  "relationships": List[str],     # Relationships with other characters
+  "character_arc": Optional[str]  # Character development arc
+}
+```
+
+### Streaming Response Models
+
+#### SSE Text Chunk
+```python
+{
+  "type": "text",
+  "content": str                  # Partial response text
+}
+```
+
+#### SSE Metadata Chunk
+```python
+{
+  "type": "metadata",
+  "metadata": {
+    "session_id": str,            # Session ID (created or existing)
+    "project_id": str,            # Project ID (created or existing)
+    "dossier_updated": bool       # Whether dossier was updated
+  }
+}
+```
+
+#### SSE Done Chunk
+```python
+{
+  "type": "done"                  # Signals end of stream
+}
+```
 
 ## Environment Variables
 
