@@ -251,6 +251,25 @@ class AIModelManager:
                 
                 print(f"📋 Including dossier context: {dossier_context.get('title', 'Untitled')} - {len([k for k, v in dossier_context.items() if v and v != 'Unknown'])} slots filled")
             
+            # Get authentication status from kwargs
+            is_authenticated = kwargs.get("is_authenticated", False)
+            
+            # Build authentication-specific instructions
+            auth_instructions = ""
+            if is_authenticated:
+                auth_instructions = """
+        USER STATUS: The user is AUTHENTICATED (signed in). They can create unlimited stories and projects.
+        - NEVER suggest signing up or creating an account
+        - When they want a new story, say: "Great! Let's start a new story. What story idea is on your mind?"
+        - After story completion, say: "Would you like to create another story? Just let me know what story idea you'd like to explore next!"
+        """
+            else:
+                auth_instructions = """
+        USER STATUS: The user is ANONYMOUS (not signed in). They are limited to one story.
+        - When they want a new story, say: "I'd love to help you create another story! To create unlimited stories and save your progress, please sign up. It's free and takes just a moment!"
+        - After story completion, suggest: "Would you like to create another story? Sign up to create unlimited stories and save your progress!"
+        """
+            
             # Enhanced story development system prompt based on client requirements
             system_prompt = f"""You are Ariel, a cinematic story development assistant for Stories We Tell. Your role is to help users develop compelling stories by following a structured, stateful conversation flow.
 
@@ -283,13 +302,11 @@ class AIModelManager:
         - Look for phrases: "at the end", "finally", "in conclusion", "that's the story", "that's my story", "story complete", "i'm done", "finished", "that's all", "the end"
         - When story seems complete, acknowledge and move to next phase
         - Don't keep asking questions if story is finished
-        - After story completion, suggest: "Would you like to create another story? Sign up to create unlimited stories and save your progress!"
+        {auth_instructions}
         
         NEW STORY REQUESTS & USER INTENT:
         - NATURALLY detect when users want to create new stories (any variation of "I want another story", "new story", "start over", "different story")
-        - For authenticated users: "Great! Let's start a new story. What story idea is on your mind?"
-        - For anonymous users: "I'd love to help you create another story! To create unlimited stories and save your progress, please sign up. It's free and takes just a moment!"
-        - Always be proactive about suggesting signup when users express interest in multiple stories
+        - Follow the authentication-specific instructions above based on user status
         
         CHARACTER CONNECTION SYNONYMS:
         - Accept multiple terms for writer/creator relationship: "writer", "creator", "author", "screenwriter", "storyteller", "I'm just the writer", "I'm only the creator"
