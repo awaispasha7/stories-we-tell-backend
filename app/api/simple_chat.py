@@ -246,6 +246,22 @@ async def chat(
         
         print(f"Chat request - Session: {session_id}, User: {user_id}, Authenticated: {is_authenticated}")
         
+        # Check if story is already completed - reject new messages
+        try:
+            supabase = get_supabase_client()
+            session_result = supabase.table("sessions").select("story_completed").eq("session_id", str(session_id)).single().execute()
+            
+            if session_result.data and session_result.data.get("story_completed"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Story is already completed. Please create a new project to start a new story."
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"⚠️ Error checking session completion status: {e}")
+            # Continue if check fails (don't block on error)
+        
         # Handle message editing: delete messages from edit point onwards
         if chat_request.edit_from_message_id:
             print(f"✏️ [EDIT] Deleting messages from {chat_request.edit_from_message_id} onwards")
@@ -805,15 +821,26 @@ async def chat(
                                 import traceback
                                 print(f"❌ [VALIDATION] Traceback: {traceback.format_exc()}")
 
-                            # mark session inactive
+                            # Mark session as completed and inactive
                             try:
                                 supabase = get_supabase_client()
                                 supabase.table("sessions").update({
+                                    "story_completed": True,
+                                    "completed_at": datetime.now(timezone.utc).isoformat(),
                                     "is_active": False,
                                     "updated_at": datetime.now(timezone.utc).isoformat()
                                 }).eq("session_id", str(session_id)).execute()
+                                print(f"✅ [COMPLETION] Marked session {session_id} as completed")
+                                
+                                # Emit event for frontend
+                                await send_event({
+                                    "type": "story_completed",
+                                    "session_id": str(session_id),
+                                    "project_id": str(project_id),
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                })
                             except Exception as _e:
-                                print(f"⚠️ Failed to close session: {_e}")
+                                print(f"⚠️ Failed to mark session as completed: {_e}")
                     except Exception as _e:
                         print(f"⚠️ Completion handling error: {_e}")
                     

@@ -64,3 +64,6 @@ Stories We Tell. - Questionaire for LLM - Working draft.docx
 test_rag_complete.py
 client_document.txt
 sample_knowledge.txt
+
+# markdown
+*.md
