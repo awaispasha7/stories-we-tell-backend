@@ -526,10 +526,12 @@ async def get_session_messages(
         try:
             # First check if this specific session is completed
             session_completed = session.get("story_completed", False)
-            story_completed = bool(session_completed)
+            story_completed = bool(session_completed) if session_completed is not None else False
+            print(f"🔍 [COMPLETION CHECK] Session {session_id} completion status: {session_completed} (bool: {story_completed})")
             
             # CRITICAL: Check if ANY session in the project is completed
             # If so, lock ALL sessions in that project
+            # BUT ONLY if project_id exists - don't lock if project_id is None!
             if project_id:
                 print(f"🔍 [COMPLETION CHECK] Checking project {project_id} for completed sessions...")
                 project_result = supabase.table("sessions").select("story_completed, session_id").eq("project_id", str(project_id)).eq("story_completed", True).limit(1).execute()
@@ -538,10 +540,17 @@ async def get_session_messages(
                     story_completed = True
                     print(f"🔒 [COMPLETION] Project {project_id} has completed sessions - locking all sessions in project")
                     print(f"🔒 [COMPLETION] Completed session found: {project_result.data[0].get('session_id')}")
+                else:
+                    print(f"✅ [COMPLETION] Project {project_id} has NO completed sessions - allowing messages")
+            else:
+                print(f"⚠️ [COMPLETION CHECK] No project_id for session {session_id} - only checking session-level completion")
+                # If no project_id, only check session-level completion (already done above)
         except Exception as e:
             print(f"⚠️ Error checking completion status: {e}")
             import traceback
             print(f"⚠️ Traceback: {traceback.format_exc()}")
+            # On error, default to NOT completed (safer)
+            story_completed = False
         
         # Ensure story_completed is always a boolean, never None/undefined
         final_story_completed = bool(story_completed) if story_completed is not None else False
