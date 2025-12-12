@@ -543,15 +543,26 @@ async def get_session_messages(
             import traceback
             print(f"⚠️ Traceback: {traceback.format_exc()}")
         
-        print(f"📤 [COMPLETION] Returning story_completed={story_completed} (type: {type(story_completed).__name__}) for session {session_id}, project {project_id}")
-        return {
+        # Ensure story_completed is always a boolean, never None/undefined
+        final_story_completed = bool(story_completed) if story_completed is not None else False
+        final_project_id = str(project_id) if project_id else None
+        
+        print(f"📤 [COMPLETION] Returning story_completed={final_story_completed} (type: {type(final_story_completed).__name__}) for session {session_id}, project {final_project_id}")
+        print(f"📤 [COMPLETION] Response will include: success=True, session_id={session_id}, messages_count={len(messages_result.data) if messages_result.data else 0}, is_authenticated={bool(user_id)}, story_completed={final_story_completed}, project_id={final_project_id}")
+        
+        response = {
             "success": True,
             "session_id": session_id,
             "messages": messages_result.data or [],
             "is_authenticated": bool(user_id),
-            "story_completed": bool(story_completed),  # Explicitly convert to boolean
-            "project_id": str(project_id) if project_id else None
+            "story_completed": final_story_completed,  # Always a boolean, never None
+            "project_id": final_project_id
         }
+        
+        print(f"📤 [COMPLETION] Final response keys: {list(response.keys())}")
+        print(f"📤 [COMPLETION] Final response story_completed value: {response.get('story_completed')} (type: {type(response.get('story_completed')).__name__})")
+        
+        return response
     except HTTPException:
         raise
     except Exception as e:
