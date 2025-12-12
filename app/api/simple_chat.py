@@ -247,11 +247,33 @@ async def chat(
         print(f"Chat request - Session: {session_id}, User: {user_id}, Authenticated: {is_authenticated}")
         
         # Check if story is already completed - reject new messages
+        # CRITICAL: Check PROJECT-level completion (if ANY session in project is completed, lock ALL)
         try:
             supabase = get_supabase_client()
-            session_result = supabase.table("sessions").select("story_completed").eq("session_id", str(session_id)).single().execute()
             
-            if session_result.data and session_result.data.get("story_completed"):
+            # First check this specific session
+            session_result = supabase.table("sessions").select("story_completed, project_id").eq("session_id", str(session_id)).single().execute()
+            session_completed = False
+            project_id_to_check = project_id
+            
+            if session_result.data:
+                session_completed = session_result.data.get("story_completed", False)
+                # Get project_id from session if not already available
+                if not project_id_to_check and session_result.data.get("project_id"):
+                    project_id_to_check = session_result.data.get("project_id")
+            
+            # CRITICAL: Check if ANY session in the project is completed
+            if project_id_to_check:
+                project_result = supabase.table("sessions").select("story_completed").eq("project_id", str(project_id_to_check)).eq("story_completed", True).limit(1).execute()
+                if project_result.data and len(project_result.data) > 0:
+                    print(f"🔒 [COMPLETION] Project {project_id_to_check} has completed sessions - blocking new messages")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Story is already completed. Please create a new project to start a new story."
+                    )
+            
+            # Also check this specific session
+            if session_completed:
                 raise HTTPException(
                     status_code=400,
                     detail="Story is already completed. Please create a new project to start a new story."
@@ -259,7 +281,7 @@ async def chat(
         except HTTPException:
             raise
         except Exception as e:
-            print(f"⚠️ Error checking session completion status: {e}")
+            print(f"⚠️ Error checking completion status: {e}")
             # Continue if check fails (don't block on error)
         
         # Handle message editing: delete messages from edit point onwards
@@ -1152,22 +1174,38 @@ async def get_session_messages(
         
         messages = await _get_conversation_history(session_id, str(session_info["user_id"]), limit=50)
         
-        # Check session completion status
+        # Check PROJECT completion status (not just session) - if ANY session in project is completed, lock ALL sessions
         story_completed = False
+        project_id = session_info.get("project_id")
+        
         try:
             supabase = get_supabase_client()
-            session_result = supabase.table("sessions").select("story_completed").eq("session_id", session_id).single().execute()
+            
+            # First check if this specific session is completed
+            session_result = supabase.table("sessions").select("story_completed, project_id").eq("session_id", session_id).single().execute()
             if session_result.data:
                 story_completed = session_result.data.get("story_completed", False)
+                # If project_id wasn't in session_info, get it from the session record
+                if not project_id and session_result.data.get("project_id"):
+                    project_id = session_result.data.get("project_id")
+            
+            # CRITICAL: Check if ANY session in the project is completed
+            # If so, lock ALL sessions in that project
+            if project_id:
+                project_result = supabase.table("sessions").select("story_completed").eq("project_id", str(project_id)).eq("story_completed", True).limit(1).execute()
+                if project_result.data and len(project_result.data) > 0:
+                    story_completed = True
+                    print(f"🔒 [COMPLETION] Project {project_id} has completed sessions - locking all sessions in project")
         except Exception as e:
-            print(f"⚠️ Error checking session completion: {e}")
+            print(f"⚠️ Error checking completion status: {e}")
         
         return {
             "success": True,
             "session_id": session_id,
             "messages": messages,
             "is_authenticated": session_info["is_authenticated"],
-            "story_completed": story_completed
+            "story_completed": story_completed,
+            "project_id": str(project_id) if project_id else None
         }
         
     except Exception as e:
