@@ -1192,19 +1192,25 @@ async def get_session_messages(
             # CRITICAL: Check if ANY session in the project is completed
             # If so, lock ALL sessions in that project
             if project_id:
-                project_result = supabase.table("sessions").select("story_completed").eq("project_id", str(project_id)).eq("story_completed", True).limit(1).execute()
+                print(f"🔍 [COMPLETION CHECK] Checking project {project_id} for completed sessions...")
+                project_result = supabase.table("sessions").select("story_completed, session_id").eq("project_id", str(project_id)).eq("story_completed", True).limit(1).execute()
+                print(f"🔍 [COMPLETION CHECK] Project query result: {len(project_result.data) if project_result.data else 0} completed sessions found")
                 if project_result.data and len(project_result.data) > 0:
                     story_completed = True
                     print(f"🔒 [COMPLETION] Project {project_id} has completed sessions - locking all sessions in project")
+                    print(f"🔒 [COMPLETION] Completed session found: {project_result.data[0].get('session_id')}")
         except Exception as e:
             print(f"⚠️ Error checking completion status: {e}")
+            import traceback
+            print(f"⚠️ Traceback: {traceback.format_exc()}")
         
+        print(f"📤 [COMPLETION] Returning story_completed={story_completed} (type: {type(story_completed).__name__}) for session {session_id}, project {project_id}")
         return {
             "success": True,
             "session_id": session_id,
             "messages": messages,
             "is_authenticated": session_info["is_authenticated"],
-            "story_completed": story_completed,
+            "story_completed": bool(story_completed),  # Explicitly convert to boolean
             "project_id": str(project_id) if project_id else None
         }
         
