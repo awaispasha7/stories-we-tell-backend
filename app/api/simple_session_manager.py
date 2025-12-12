@@ -519,9 +519,38 @@ async def get_session_messages(
         # Get messages
         messages_result = supabase.table("chat_messages").select("*").eq("session_id", session_id).order("created_at", desc=False).limit(limit).execute()
         
+        # Check PROJECT completion status (not just session) - if ANY session in project is completed, lock ALL sessions
+        story_completed = False
+        project_id = session.get("project_id")
+        
+        try:
+            # First check if this specific session is completed
+            session_completed = session.get("story_completed", False)
+            story_completed = bool(session_completed)
+            
+            # CRITICAL: Check if ANY session in the project is completed
+            # If so, lock ALL sessions in that project
+            if project_id:
+                print(f"🔍 [COMPLETION CHECK] Checking project {project_id} for completed sessions...")
+                project_result = supabase.table("sessions").select("story_completed, session_id").eq("project_id", str(project_id)).eq("story_completed", True).limit(1).execute()
+                print(f"🔍 [COMPLETION CHECK] Project query result: {len(project_result.data) if project_result.data else 0} completed sessions found")
+                if project_result.data and len(project_result.data) > 0:
+                    story_completed = True
+                    print(f"🔒 [COMPLETION] Project {project_id} has completed sessions - locking all sessions in project")
+                    print(f"🔒 [COMPLETION] Completed session found: {project_result.data[0].get('session_id')}")
+        except Exception as e:
+            print(f"⚠️ Error checking completion status: {e}")
+            import traceback
+            print(f"⚠️ Traceback: {traceback.format_exc()}")
+        
+        print(f"📤 [COMPLETION] Returning story_completed={story_completed} (type: {type(story_completed).__name__}) for session {session_id}, project {project_id}")
         return {
             "success": True,
-            "messages": messages_result.data or []
+            "session_id": session_id,
+            "messages": messages_result.data or [],
+            "is_authenticated": bool(user_id),
+            "story_completed": bool(story_completed),  # Explicitly convert to boolean
+            "project_id": str(project_id) if project_id else None
         }
     except HTTPException:
         raise
