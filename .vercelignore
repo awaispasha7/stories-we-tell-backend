@@ -49,3 +49,44 @@ Thumbs.db
 
 # Exclude Supabase config (not needed for deployment)
 supabase/
+
+# Exclude Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Exclude virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Exclude migrations (already in database)
+app/database/supabase/migrations/
+
+# Exclude specific large files
+20251020 - Client Workflow Proposition - Chatbot.pdf
+Stories We Tell. - Questionaire for LLM - Working draft.docx
+client_document.txt
+sample_knowledge.txt
+test_document.txt
+test_documents/

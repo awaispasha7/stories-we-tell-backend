@@ -5,9 +5,9 @@ Handles text embedding generation using OpenAI's text-embedding-3-small model
 
 import os
 import asyncio
+import math
 from typing import List, Optional, Dict, Any
 from openai import AsyncOpenAI
-import numpy as np
 
 class EmbeddingService:
     """Service for generating and managing text embeddings"""
@@ -108,7 +108,7 @@ class EmbeddingService:
     
     def cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """
-        Calculate cosine similarity between two vectors
+        Calculate cosine similarity between two vectors using pure Python
         
         Args:
             vec1: First vector
@@ -118,12 +118,15 @@ class EmbeddingService:
             Cosine similarity score (0-1)
         """
         try:
-            v1 = np.array(vec1)
-            v2 = np.array(vec2)
+            if len(vec1) != len(vec2):
+                return 0.0
             
-            dot_product = np.dot(v1, v2)
-            norm1 = np.linalg.norm(v1)
-            norm2 = np.linalg.norm(v2)
+            # Calculate dot product
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            
+            # Calculate norms
+            norm1 = math.sqrt(sum(a * a for a in vec1))
+            norm2 = math.sqrt(sum(b * b for b in vec2))
             
             if norm1 == 0 or norm2 == 0:
                 return 0.0
