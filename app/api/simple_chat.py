@@ -1152,11 +1152,22 @@ async def get_session_messages(
         
         messages = await _get_conversation_history(session_id, str(session_info["user_id"]), limit=50)
         
+        # Check session completion status
+        story_completed = False
+        try:
+            supabase = get_supabase_client()
+            session_result = supabase.table("sessions").select("story_completed").eq("session_id", session_id).single().execute()
+            if session_result.data:
+                story_completed = session_result.data.get("story_completed", False)
+        except Exception as e:
+            print(f"⚠️ Error checking session completion: {e}")
+        
         return {
             "success": True,
             "session_id": session_id,
             "messages": messages,
-            "is_authenticated": session_info["is_authenticated"]
+            "is_authenticated": session_info["is_authenticated"],
+            "story_completed": story_completed
         }
         
     except Exception as e:
