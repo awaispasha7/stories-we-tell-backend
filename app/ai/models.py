@@ -231,7 +231,40 @@ class AIModelManager:
                 if dossier_context.get('story_world_type') and dossier_context.get('story_world_type') != 'Unknown':
                     dossier_info += f"World Type: {dossier_context['story_world_type']}\n"
                 
-                # Character (Subject)
+                # Heroes (Primary Characters)
+                if dossier_context.get('heroes') and isinstance(dossier_context['heroes'], list) and len(dossier_context['heroes']) > 0:
+                    for i, hero in enumerate(dossier_context['heroes'], 1):
+                        if hero.get('name'):
+                            dossier_info += f"Hero {i}: {hero.get('name')}"
+                            if hero.get('age_at_story'):
+                                dossier_info += f" (age {hero.get('age_at_story')})"
+                            if hero.get('relationship_to_user'):
+                                dossier_info += f", {hero.get('relationship_to_user')}"
+                            dossier_info += "\n"
+                
+                # Supporting Characters
+                if dossier_context.get('supporting_characters') and isinstance(dossier_context['supporting_characters'], list) and len(dossier_context['supporting_characters']) > 0:
+                    for char in dossier_context['supporting_characters']:
+                        if char.get('name'):
+                            dossier_info += f"Supporting: {char.get('name')}"
+                            if char.get('role'):
+                                dossier_info += f" ({char.get('role')})"
+                            dossier_info += "\n"
+                
+                # Story Type & Perspective
+                if dossier_context.get('story_type') and dossier_context.get('story_type') != 'other':
+                    dossier_info += f"Story Type: {dossier_context['story_type']}\n"
+                if dossier_context.get('perspective') and dossier_context.get('perspective') != 'narrator_voice':
+                    dossier_info += f"Perspective: {dossier_context['perspective']}\n"
+                if dossier_context.get('audience'):
+                    aud = dossier_context['audience']
+                    if isinstance(aud, dict):
+                        if aud.get('who_will_see_first'):
+                            dossier_info += f"Audience: {aud.get('who_will_see_first')}\n"
+                        if aud.get('desired_feeling'):
+                            dossier_info += f"Desired Feeling: {aud.get('desired_feeling')}\n"
+                
+                # Character (Subject - Legacy)
                 if dossier_context.get('subject_full_name') and dossier_context.get('subject_full_name') != 'Unknown':
                     dossier_info += f"Character: {dossier_context['subject_full_name']}\n"
                 if dossier_context.get('subject_relationship_to_writer') and dossier_context.get('subject_relationship_to_writer') != 'Unknown':
@@ -281,11 +314,27 @@ class AIModelManager:
         5. PROGRESSIVE DISCLOSURE: Move from problem → actions → outcome
 
         CONVERSATION STRUCTURE (Slot-based, in order):
-        1. STORY FRAME: story_timeframe → story_location → story_world_type → writer_connection_place_time
-        2. CHARACTER: subject_exists_real_world → subject_full_name → subject_relationship_to_writer → subject_brief_description
-        3. STORY CRAFT: problem_statement → actions_taken → outcome → likes_in_story
-        4. TECHNICAL: runtime (3-5 minutes) → title
-        5. COMPLETION: Recognize when story is complete
+        1. STORY FRAME: story_timeframe → story_location → story_world_type → writer_connection_place_time → season_time_of_year → environmental_details
+        2. HERO CHARACTERS (Primary - up to 2):
+           - For EACH hero, collect: name → age_at_story → relationship_to_user → physical_descriptors → personality_traits
+           - Ask: "Is there a second hero in the story?" (if first hero collected)
+        3. SUPPORTING CHARACTERS (Secondary - up to 2):
+           - Ask: "Are there other important people in the story?"
+           - For each: name → role → description (light metadata)
+        4. STORY TYPE: Ask "What type of story do you want?" (romantic, childhood_drama, fantasy, epic_legend, adventure, historic_action, documentary_tone, other)
+        5. AUDIENCE & PERSPECTIVE:
+           - "Who will see this first?" → "What do you want them to feel?"
+           - "What perspective?" (first_person, narrator_voice, legend_myth_tone, documentary_tone)
+        6. CHARACTER (Subject - Legacy): subject_exists_real_world → subject_full_name → subject_relationship_to_writer → subject_brief_description
+        7. STORY CRAFT: problem_statement → actions_taken → outcome → likes_in_story
+        8. TECHNICAL: runtime (3-5 minutes) → title
+        9. COMPLETION: Recognize when story is complete
+        
+        CHARACTER COLLECTION PRIORITY:
+        - ALWAYS collect HEROES first (primary characters)
+        - Then ask about SUPPORTING CHARACTERS (secondary)
+        - Heroes require full details (age, relationship, physical, personality)
+        - Supporting characters need only light metadata (name, role, description)
 
         MEMORY MANAGEMENT:
         - ALWAYS reference previous answers by name
@@ -337,7 +386,14 @@ class AIModelManager:
         SLOT-BASED ROUTING:
         - If story_timeframe is Unknown → Ask "When does your story take place?"
         - If story_location is Unknown → Ask "Where does it take place?"
-        - If subject_full_name is Unknown → Ask "What's your main character's name?"
+        - If heroes array is empty → Ask "Who is the main character of your story?" then collect: name, age, relationship, physical descriptors, personality
+        - If first hero collected and second hero not asked → Ask "Is there a second hero in the story?"
+        - If supporting_characters not asked → Ask "Are there other important people in the story?" (up to 2)
+        - If story_type is Unknown → Ask "What type of story do you want?" (offer: romantic, childhood_drama, fantasy, epic_legend, adventure, historic_action, documentary_tone, other)
+        - If audience.who_will_see_first is empty → Ask "Who will see this first?"
+        - If audience.desired_feeling is empty → Ask "What do you want them to feel?"
+        - If perspective is Unknown → Ask "What perspective?" (first_person, narrator_voice, legend_myth_tone, documentary_tone)
+        - If subject_full_name is Unknown (legacy) → Ask "What's your main character's name?"
         - If problem_statement is Unknown → Ask "What problem does [character] face?"
         - If actions_taken is Unknown → Ask "What does [character] do to solve this?"
         - If outcome is Unknown → Ask "How does the story end?"

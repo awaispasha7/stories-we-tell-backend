@@ -44,8 +44,8 @@ class DossierExtractor:
             for msg in conversation_history
         ])
         
-        # Extraction prompt - Extended to include logline, characters[], scenes[]
-        extraction_prompt = f"""Based on this conversation about a story, extract structured metadata following the client's slot-based framework.
+        # Enhanced extraction prompt - Includes heroes, supporting characters, story type, perspective
+        extraction_prompt = f"""Based on this conversation about a story, extract structured metadata following the client's comprehensive framework.
 
 Conversation:
 {context}
@@ -53,29 +53,52 @@ Conversation:
 Extract the following information (use "Unknown" if not mentioned). Always include all keys. If something is not present, use empty string for strings and [] for arrays.
 
 STORY FRAME (Frame-first approach):
-1. story_timeframe: When does the story take place?
-2. story_location: Where does it take place?
+1. story_timeframe: When does the story take place? (e.g., "2017", "Winter 2018", "2039")
+2. story_location: Where does it take place? (e.g., "Minnesota, US", "Oslo, Norway")
 3. story_world_type: Real/Invented-in-our-world/Invented-other-world
 4. writer_connection_place_time: Connection to writer's time/place
+5. season_time_of_year: Season or time of year (if mentioned)
+6. environmental_details: Any meaningful environmental details
 
-CHARACTER (Subject):
-5. subject_exists_real_world: boolean/unknown
-6. subject_full_name: Character's name
-7. subject_relationship_to_writer: Relationship to writer
-8. subject_brief_description: Brief character description
+CHARACTER (Subject - Legacy):
+7. subject_exists_real_world: boolean/unknown
+8. subject_full_name: Character's name
+9. subject_relationship_to_writer: Relationship to writer
+10. subject_brief_description: Brief character description
+
+HEROES (array; up to 2 heroes - PRIMARY characters):
+- name: Full name
+- age_at_story: Age at time of story (number)
+- relationship_to_user: Relationship to user/writer
+- physical_descriptors: Physical appearance details
+- personality_traits: Personality characteristics
+- photo_url: URL if photo was uploaded (empty string if not)
+
+SUPPORTING CHARACTERS (array; up to 2 - SECONDARY characters):
+- name: Full name
+- role: Role in story (e.g., "mentor", "antagonist", "friend")
+- description: Brief description (light metadata)
 
 STORY CRAFT:
-9. problem_statement: What problem does the character face?
-10. actions_taken: What actions does the character take?
-11. outcome: What is the outcome?
-12. likes_in_story: What does the writer like about this story?
+11. problem_statement: What problem does the character face?
+12. actions_taken: What actions does the character take?
+13. outcome: What is the outcome?
+14. likes_in_story: What does the writer like about this story?
+
+STORY TYPE & STYLE:
+15. story_type: One of: "romantic", "childhood_drama", "fantasy", "epic_legend", "adventure", "historic_action", "documentary_tone", "other"
+16. audience: {{
+    "who_will_see_first": "string",
+    "desired_feeling": "string"
+}}
+17. perspective: One of: "first_person", "narrator_voice", "legend_myth_tone", "documentary_tone"
 
 TECHNICAL:
-13. runtime: Estimated runtime (3-5 minutes)
-14. title: Working title (if mentioned)
-15. logline: Single-sentence premise (if implied)
+18. runtime: Estimated runtime (3-5 minutes)
+19. title: Working title (if mentioned)
+20. logline: Single-sentence premise (if implied)
 
-CHARACTERS (array; include key even if empty):
+CHARACTERS (array; legacy format - include for backward compatibility):
 - name, description, role (e.g., protagonist/mentor)
 
 SCENES (array; include key even if empty):
@@ -88,14 +111,21 @@ Respond ONLY with valid JSON in this exact format:
     "story_location": "string", 
     "story_world_type": "Real/Invented-in-our-world/Invented-other-world",
     "writer_connection_place_time": "string",
+    "season_time_of_year": "string",
+    "environmental_details": "string",
     "subject_exists_real_world": "boolean/unknown",
     "subject_full_name": "string",
     "subject_relationship_to_writer": "string",
     "subject_brief_description": "string",
+    "heroes": [{{"name": "string", "age_at_story": "number or string", "relationship_to_user": "string", "physical_descriptors": "string", "personality_traits": "string", "photo_url": "string"}}],
+    "supporting_characters": [{{"name": "string", "role": "string", "description": "string", "photo_url": "string"}}],
     "problem_statement": "string",
     "actions_taken": "string", 
     "outcome": "string",
     "likes_in_story": "string",
+    "story_type": "romantic|childhood_drama|fantasy|epic_legend|adventure|historic_action|documentary_tone|other",
+    "audience": {{"who_will_see_first": "string", "desired_feeling": "string"}},
+    "perspective": "first_person|narrator_voice|legend_myth_tone|documentary_tone",
     "runtime": "3-5 minutes",
     "title": "string",
     "logline": "string",
@@ -118,7 +148,7 @@ Respond ONLY with valid JSON in this exact format:
                     }
                 ],
                 temperature=0.3,  # Lower temperature for consistent extraction
-                max_completion_tokens=1000
+                max_completion_tokens=2000  # Increased for more detailed extraction
             )
             
             # Parse the response
@@ -150,14 +180,21 @@ Respond ONLY with valid JSON in this exact format:
                 "story_location": "Unknown", 
                 "story_world_type": "Unknown",
                 "writer_connection_place_time": "Unknown",
+                "season_time_of_year": "",
+                "environmental_details": "",
                 "subject_exists_real_world": "unknown",
                 "subject_full_name": "Unknown",
                 "subject_relationship_to_writer": "Unknown",
                 "subject_brief_description": "Unknown",
+                "heroes": [],
+                "supporting_characters": [],
                 "problem_statement": "Unknown",
                 "actions_taken": "Unknown", 
                 "outcome": "Unknown",
                 "likes_in_story": "Unknown",
+                "story_type": "other",
+                "audience": {"who_will_see_first": "", "desired_feeling": ""},
+                "perspective": "narrator_voice",
                 "runtime": "3-5 minutes",
                 "title": "Untitled Story",
                 "logline": "",
