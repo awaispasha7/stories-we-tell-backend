@@ -641,29 +641,139 @@ async def chat(
                                 except Exception as _e:
                                     print(f"⚠️ Could not fetch existing dossier: {_e}")
 
-                                # Merge characters by name (case-insensitive)
+                                # Merge characters by name (case-insensitive) with deduplication logic
                                 try:
                                     existing_chars = existing_snapshot.get("characters", []) or []
                                     new_chars = new_metadata.get("characters", []) or []
-                                    if new_chars:
+                                    
+                                    # Also merge heroes and supporting_characters into the legacy characters array for display
+                                    existing_heroes = existing_snapshot.get("heroes", []) or []
+                                    new_heroes = new_metadata.get("heroes", []) or []
+                                    existing_supporting = existing_snapshot.get("supporting_characters", []) or []
+                                    new_supporting = new_metadata.get("supporting_characters", []) or []
+                                    
+                                    if new_chars or new_heroes or new_supporting:
                                         by_name = {}
+                                        
+                                        # Add existing characters
                                         for c in existing_chars:
                                             key = (c.get("name") or "").strip().lower()
-                                            by_name[key] = c
+                                            if key and key != "unknown":
+                                                by_name[key] = c
+                                        
+                                        # Add existing heroes to characters list
+                                        for h in existing_heroes:
+                                            key = (h.get("name") or "").strip().lower()
+                                            if key and key != "unknown":
+                                                if key not in by_name:
+                                                    by_name[key] = {
+                                                        "name": h.get("name"),
+                                                        "role": "protagonist",
+                                                        "description": f"{h.get('relationship_to_user', '')} {h.get('physical_descriptors', '')} {h.get('personality_traits', '')}".strip()
+                                                    }
+                                                else:
+                                                    # Merge hero info into existing character
+                                                    by_name[key].update({
+                                                        "role": by_name[key].get("role") or "protagonist",
+                                                        "description": by_name[key].get("description") or f"{h.get('relationship_to_user', '')} {h.get('physical_descriptors', '')} {h.get('personality_traits', '')}".strip()
+                                                    })
+                                        
+                                        # Add existing supporting characters
+                                        for s in existing_supporting:
+                                            key = (s.get("name") or "").strip().lower()
+                                            if key and key != "unknown":
+                                                if key not in by_name:
+                                                    by_name[key] = {
+                                                        "name": s.get("name"),
+                                                        "role": s.get("role", "supporting"),
+                                                        "description": s.get("description", "")
+                                                    }
+                                        
+                                        # Merge new characters
                                         for c in new_chars:
                                             key = (c.get("name") or "").strip().lower()
+                                            if not key or key == "unknown":
+                                                # Skip "Unknown" characters - they're likely placeholders
+                                                continue
                                             if key in by_name:
-                                                merged = {**by_name[key], **{k: v for k, v in c.items() if v}}
+                                                # Merge: prefer new non-empty values, but keep existing if new is empty
+                                                merged = {**by_name[key]}
+                                                for k, v in c.items():
+                                                    if v and (not by_name[key].get(k) or by_name[key].get(k) == "Unknown"):
+                                                        merged[k] = v
                                                 by_name[key] = merged
                                             else:
                                                 by_name[key] = c
+                                        
+                                        # Merge new heroes
+                                        for h in new_heroes:
+                                            key = (h.get("name") or "").strip().lower()
+                                            if key and key != "unknown":
+                                                if key not in by_name:
+                                                    by_name[key] = {
+                                                        "name": h.get("name"),
+                                                        "role": "protagonist",
+                                                        "description": f"{h.get('relationship_to_user', '')} {h.get('physical_descriptors', '')} {h.get('personality_traits', '')}".strip()
+                                                    }
+                                                else:
+                                                    # Update existing character with hero info
+                                                    by_name[key].update({
+                                                        "role": by_name[key].get("role") or "protagonist"
+                                                    })
+                                        
+                                        # Merge new supporting characters
+                                        for s in new_supporting:
+                                            key = (s.get("name") or "").strip().lower()
+                                            if key and key != "unknown":
+                                                if key not in by_name:
+                                                    by_name[key] = {
+                                                        "name": s.get("name"),
+                                                        "role": s.get("role", "supporting"),
+                                                        "description": s.get("description", "")
+                                                    }
+                                                else:
+                                                    # Update existing character
+                                                    by_name[key].update({
+                                                        "role": by_name[key].get("role") or s.get("role", "supporting"),
+                                                        "description": by_name[key].get("description") or s.get("description", "")
+                                                    })
+                                        
                                         new_metadata["characters"] = list(by_name.values())
-                                        print(f"📋 Merged characters: {len(new_metadata['characters'])}")
-                                    elif existing_chars:
+                                        print(f"📋 Merged characters: {len(new_metadata['characters'])} (deduplicated)")
+                                        
+                                        # Also update heroes and supporting_characters arrays
+                                        if new_heroes:
+                                            heroes_by_name = {}
+                                            for h in existing_heroes + new_heroes:
+                                                key = (h.get("name") or "").strip().lower()
+                                                if key and key != "unknown":
+                                                    if key not in heroes_by_name:
+                                                        heroes_by_name[key] = h
+                                                    else:
+                                                        # Merge hero data
+                                                        heroes_by_name[key] = {**heroes_by_name[key], **{k: v for k, v in h.items() if v}}
+                                            new_metadata["heroes"] = list(heroes_by_name.values())
+                                        
+                                        if new_supporting:
+                                            supporting_by_name = {}
+                                            for s in existing_supporting + new_supporting:
+                                                key = (s.get("name") or "").strip().lower()
+                                                if key and key != "unknown":
+                                                    if key not in supporting_by_name:
+                                                        supporting_by_name[key] = s
+                                                    else:
+                                                        # Merge supporting character data
+                                                        supporting_by_name[key] = {**supporting_by_name[key], **{k: v for k, v in s.items() if v}}
+                                            new_metadata["supporting_characters"] = list(supporting_by_name.values())
+                                    elif existing_chars or existing_heroes or existing_supporting:
                                         new_metadata["characters"] = existing_chars
+                                        new_metadata["heroes"] = existing_heroes
+                                        new_metadata["supporting_characters"] = existing_supporting
                                         print(f"📋 Preserved existing characters: {len(existing_chars)}")
                                 except Exception as e:
                                     print(f"⚠️ Character merge failed: {e}")
+                                    import traceback
+                                    print(f"⚠️ Traceback: {traceback.format_exc()}")
 
                                 # Merge scenes by one_liner
                                 try:
@@ -765,15 +875,120 @@ async def chat(
                         
                         if is_complete:
                             print("✅ Story completion detected. Generating script and transcript for validation.")
-                            # fetch dossier snapshot if available
-                            dossier_snapshot = None
+                            
+                            # FINAL COMPREHENSIVE DOSSIER UPDATE - Extract from ENTIRE conversation
+                            print("📋 [FINAL DOSSIER] Performing final comprehensive dossier extraction from entire conversation...")
                             try:
-                                if project_id:
+                                if dossier_extractor and project_id and len(updated_history_for_completion) >= 2:
+                                    # Extract from ENTIRE conversation history (not just recent messages)
+                                    print(f"📋 [FINAL DOSSIER] Extracting from {len(updated_history_for_completion)} total messages")
+                                    final_metadata = await dossier_extractor.extract_metadata(updated_history_for_completion)
+                                    print(f"📋 [FINAL DOSSIER] Final extraction complete. Characters: {len(final_metadata.get('characters', []))}")
+                                    
+                                    # Fetch existing dossier to merge
                                     from ..database.session_service_supabase import session_service
-                                    d = session_service.get_dossier(UUID(project_id), UUID(user_id))
-                                    dossier_snapshot = d.snapshot_json if d else None
+                                    existing_dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                                    existing_snapshot = existing_dossier.snapshot_json if existing_dossier else {}
+                                    
+                                    # Merge with existing data (preserve title, merge characters/scenes)
+                                    if existing_snapshot:
+                                        # Preserve title
+                                        if existing_snapshot.get("title"):
+                                            final_metadata["title"] = existing_snapshot.get("title")
+                                        
+                                        # Merge characters (with deduplication)
+                                        existing_chars = existing_snapshot.get("characters", []) or []
+                                        final_chars = final_metadata.get("characters", []) or []
+                                        
+                                        # Merge heroes and supporting characters
+                                        existing_heroes = existing_snapshot.get("heroes", []) or []
+                                        final_heroes = final_metadata.get("heroes", []) or []
+                                        existing_supporting = existing_snapshot.get("supporting_characters", []) or []
+                                        final_supporting = final_metadata.get("supporting_characters", []) or []
+                                        
+                                        # Deduplicate and merge all characters
+                                        by_name = {}
+                                        
+                                        # Add existing characters (skip "Unknown")
+                                        for c in existing_chars:
+                                            key = (c.get("name") or "").strip().lower()
+                                            if key and key != "unknown":
+                                                by_name[key] = c
+                                        
+                                        # Add final characters (prefer final extraction - it has full conversation)
+                                        for c in final_chars:
+                                            key = (c.get("name") or "").strip().lower()
+                                            if not key or key == "unknown":
+                                                continue
+                                            if key in by_name:
+                                                # Merge: prefer final values
+                                                merged = {**by_name[key], **{k: v for k, v in c.items() if v}}
+                                                by_name[key] = merged
+                                            else:
+                                                by_name[key] = c
+                                        
+                                        # Merge heroes
+                                        heroes_by_name = {}
+                                        for h in existing_heroes + final_heroes:
+                                            key = (h.get("name") or "").strip().lower()
+                                            if key and key != "unknown":
+                                                if key not in heroes_by_name:
+                                                    heroes_by_name[key] = h
+                                                else:
+                                                    heroes_by_name[key] = {**heroes_by_name[key], **{k: v for k, v in h.items() if v}}
+                                        
+                                        # Merge supporting characters
+                                        supporting_by_name = {}
+                                        for s in existing_supporting + final_supporting:
+                                            key = (s.get("name") or "").strip().lower()
+                                            if key and key != "unknown":
+                                                if key not in supporting_by_name:
+                                                    supporting_by_name[key] = s
+                                                else:
+                                                    supporting_by_name[key] = {**supporting_by_name[key], **{k: v for k, v in s.items() if v}}
+                                        
+                                        final_metadata["characters"] = list(by_name.values())
+                                        final_metadata["heroes"] = list(heroes_by_name.values())
+                                        final_metadata["supporting_characters"] = list(supporting_by_name.values())
+                                        
+                                        print(f"📋 [FINAL DOSSIER] Merged characters: {len(final_metadata['characters'])} (deduplicated)")
+                                    
+                                    # Update dossier with final comprehensive extraction
+                                    dossier_update = DossierUpdate(snapshot_json=final_metadata)
+                                    updated_dossier = session_service.update_dossier(
+                                        UUID(project_id),
+                                        UUID(user_id),
+                                        dossier_update
+                                    )
+                                    if updated_dossier:
+                                        print(f"✅ [FINAL DOSSIER] Final dossier updated: {len(final_metadata.get('characters', []))} characters")
+                                        # Emit dossier updated event
+                                        await send_event({
+                                            "type": "dossier_updated",
+                                            "project_id": str(project_id),
+                                            "dossier": final_metadata
+                                        })
+                                    
+                                    dossier_snapshot = final_metadata
+                                else:
+                                    # Fallback: fetch existing dossier
+                                    if project_id:
+                                        from ..database.session_service_supabase import session_service
+                                        d = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                                        dossier_snapshot = d.snapshot_json if d else None
                             except Exception as _e:
-                                print(f"⚠️ Could not fetch dossier snapshot for email: {_e}")
+                                print(f"⚠️ [FINAL DOSSIER] Error in final dossier update: {_e}")
+                                import traceback
+                                print(f"⚠️ [FINAL DOSSIER] Traceback: {traceback.format_exc()}")
+                                # Fallback: fetch existing dossier
+                                try:
+                                    if project_id:
+                                        from ..database.session_service_supabase import session_service
+                                        d = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                                        dossier_snapshot = d.snapshot_json if d else None
+                                except Exception as __e:
+                                    print(f"⚠️ Could not fetch dossier snapshot for email: {__e}")
+                                    dossier_snapshot = None
 
                             # Generate conversation transcript
                             transcript = await _generate_conversation_transcript(updated_history_for_completion)

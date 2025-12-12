@@ -45,12 +45,24 @@ class DossierExtractor:
         ])
         
         # Enhanced extraction prompt - Includes heroes, supporting characters, story type, perspective
-        extraction_prompt = f"""Based on this conversation about a story, extract structured metadata following the client's comprehensive framework.
+        extraction_prompt = f"""Based on this ENTIRE conversation about a story, extract structured metadata following the client's comprehensive framework.
+
+IMPORTANT: Read through the ENTIRE conversation from start to finish. Extract information mentioned at ANY point in the conversation, not just recent messages.
 
 Conversation:
 {context}
 
 Extract the following information (use "Unknown" if not mentioned). Always include all keys. If something is not present, use empty string for strings and [] for arrays.
+
+CRITICAL CHARACTER EXTRACTION RULES:
+1. Extract ALL characters mentioned throughout the ENTIRE conversation, including:
+   - All family members (mother, father, siblings, etc.)
+   - All friends, partners, colleagues
+   - All antagonists and supporting characters
+   - Characters mentioned by relationship (e.g., "Cindy's mother", "her father") - extract them with proper names if given
+2. If a character is mentioned as "Unknown" or "a third person" early but later identified by name, use the identified name and merge the information
+3. If multiple references point to the same character (e.g., "Cindy's father" and "Robert"), merge them into one character entry
+4. Do NOT create duplicate characters - if "Unknown" and "Robert" refer to the same person, only include "Robert" with all the information
 
 STORY FRAME (Frame-first approach):
 1. story_timeframe: When does the story take place? (e.g., "2017", "Winter 2018", "2039")
@@ -100,6 +112,10 @@ TECHNICAL:
 
 CHARACTERS (array; legacy format - include for backward compatibility):
 - name, description, role (e.g., protagonist/mentor)
+- IMPORTANT: Extract ALL characters mentioned throughout the ENTIRE conversation, not just the main ones
+- If a character is mentioned as "Unknown" early but later identified by name, use the identified name
+- Include ALL family members, friends, antagonists, and supporting characters mentioned
+- If someone is mentioned (e.g., "Cindy's mother", "her father", "Robert"), extract them as separate characters with their proper names/relationships
 
 SCENES (array; include key even if empty):
 - one_liner (short beat/scene summary)
