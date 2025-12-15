@@ -47,7 +47,12 @@ class DossierExtractor:
         # Enhanced extraction prompt - Includes heroes, supporting characters, story type, perspective
         extraction_prompt = f"""Based on this ENTIRE conversation about a story, extract structured metadata following the client's comprehensive framework.
 
-IMPORTANT: Read through the ENTIRE conversation from start to finish. Extract information mentioned at ANY point in the conversation, not just recent messages.
+CRITICAL INSTRUCTIONS:
+1. Read through the ENTIRE conversation from start to finish - do NOT skip any messages
+2. Extract information mentioned at ANY point in the conversation, not just recent messages
+3. Extract ALL scenes mentioned - do NOT limit the number of scenes. If the story has 30 scenes, extract all 30
+4. Extract ALL characters mentioned - include every person, even minor ones
+5. Do NOT truncate or summarize - extract complete information for every field
 
 Conversation:
 {context}
@@ -117,9 +122,14 @@ CHARACTERS (array; legacy format - include for backward compatibility):
 - Include ALL family members, friends, antagonists, and supporting characters mentioned
 - If someone is mentioned (e.g., "Cindy's mother", "her father", "Robert"), extract them as separate characters with their proper names/relationships
 
-SCENES (array; include key even if empty):
+SCENES (array; CRITICAL - extract ALL scenes mentioned in the conversation):
+- Extract EVERY scene, beat, or story moment mentioned throughout the ENTIRE conversation
+- Do NOT limit the number of scenes - include ALL scenes, even if there are 20, 30, or more
+- Read through the entire conversation chronologically and extract scenes in the order they appear in the story
 - one_liner (short beat/scene summary)
 - Optional: time_of_day, interior_exterior, tone
+- IMPORTANT: If the conversation describes many scenes, extract ALL of them - completeness is more important than brevity
+- IMPORTANT: Read through the entire conversation and extract scenes in chronological order as they appear in the story
 
 Respond ONLY with valid JSON in this exact format:
 {{{{
@@ -164,7 +174,7 @@ Respond ONLY with valid JSON in this exact format:
                     }
                 ],
                 temperature=0.3,  # Lower temperature for consistent extraction
-                max_completion_tokens=2000  # Increased for more detailed extraction
+                max_completion_tokens=4000  # Increased significantly to allow for all scenes, characters, and details
             )
             
             # Parse the response
