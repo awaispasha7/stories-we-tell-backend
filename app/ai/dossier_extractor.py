@@ -53,6 +53,8 @@ CRITICAL INSTRUCTIONS:
 3. Extract ALL scenes mentioned - do NOT limit the number of scenes. If the story has 30 scenes, extract all 30
 4. Extract ALL characters mentioned - include every person, even minor ones
 5. Do NOT truncate or summarize - extract complete information for every field
+6. For problem_statement, actions_taken, and outcome: Read the ENTIRE story FIRST, then extract the ACTUAL/FINAL values based on the complete story arc, not just early mentions
+7. The outcome MUST reflect how the story actually ends - read to the very end of the conversation to find the final resolution
 
 Conversation:
 {context}
@@ -96,11 +98,29 @@ SUPPORTING CHARACTERS (array; up to 2 - SECONDARY characters):
 - role: Role in story (e.g., "mentor", "antagonist", "friend")
 - description: Brief description (light metadata)
 
-STORY CRAFT:
-11. problem_statement: What problem does the character face?
-12. actions_taken: What actions does the character take?
-13. outcome: What is the outcome?
+STORY CRAFT (CRITICAL - Extract the ACTUAL/FINAL story elements, not just early mentions):
+11. problem_statement: What is the ACTUAL/CORE problem the character faces in this story? 
+    - Read the ENTIRE story to understand the full context
+    - Extract the REAL problem that drives the story, not just what was mentioned in the beginning
+    - If the problem evolves or becomes clearer later in the story, use the FINAL/ACTUAL problem
+    - This should reflect the central conflict or challenge the character must overcome
+    
+12. actions_taken: What ACTIONS does the character take to address the problem or navigate the situation?
+    - Extract the key actions taken throughout the ENTIRE story
+    - Include actions mentioned at any point in the conversation
+    - Focus on actions that are meaningful to the story's progression
+    - If actions are described later in the story, include those as well
+    
+13. outcome: What is the FINAL outcome/resolution of the story?
+    - This is CRITICAL: Extract the ACTUAL ending/outcome, not just what was mentioned early
+    - Read to the very end of the conversation to find how the story actually concludes
+    - If the story ends in confusion, uncertainty, or a specific way, capture that EXACT outcome
+    - The outcome should reflect the final state of the story as described at the end
+    - Examples: "Story ends in confusion and perplexion", "Character accepts the loss", "Story ends with sunset and reflection"
+    
 14. likes_in_story: What does the writer like about this story?
+    - Extract what the writer explicitly says they like or find special about the story
+    - Look for phrases like "I like the fact that...", "This story is special because...", "What makes this special..."
 
 STORY TYPE & STYLE:
 15. story_type: One of: "romantic", "childhood_drama", "fantasy", "epic_legend", "adventure", "historic_action", "documentary_tone", "other"
@@ -162,11 +182,11 @@ Respond ONLY with valid JSON in this exact format:
         try:
             # Call OpenAI to extract metadata
             response = openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",  # Use GPT-4o for more accurate extraction of final story elements
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a story analysis expert. Extract story metadata from conversations and respond ONLY with valid JSON."
+                        "content": "You are a story analysis expert. Read the ENTIRE conversation from start to finish before extracting metadata. Pay special attention to the FINAL problem, actions, and outcome as described at the end of the story, not just early mentions. Extract story metadata and respond ONLY with valid JSON."
                     },
                     {
                         "role": "user",
