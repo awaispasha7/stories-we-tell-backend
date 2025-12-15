@@ -301,45 +301,34 @@ class EmailService:
         return "\n".join(summary_parts) if summary_parts else "Story details captured successfully."
     
     def _build_dossier_html(self, story_data: Dict[str, Any]) -> str:
-        """Build HTML for simplified dossier matching client intake requirements"""
+        """Build HTML for simplified dossier matching EXACT client workflow order"""
         html_parts = []
         
-        # Story Overview
-        html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>📖 Story Overview</h3>")
-        html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
-        if story_data.get('title'):
-            html_parts.append(f"<p><strong>Title:</strong> {story_data['title']}</p>")
-        if story_data.get('logline'):
-            html_parts.append(f"<p><strong>Logline:</strong> {story_data['logline']}</p>")
-        if story_data.get('genre'):
-            html_parts.append(f"<p><strong>Genre:</strong> {story_data['genre']}</p>")
-        if story_data.get('tone'):
-            html_parts.append(f"<p><strong>Tone:</strong> {story_data['tone']}</p>")
-        html_parts.append("</div>")
-        
-        # Hero Characters
+        # STEP 2: Hero Characters (Primary)
         heroes = story_data.get('heroes', [])
         if heroes:
-            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>👤 Hero Characters</h3>")
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>Step 2: Hero Characters</h3>")
             for idx, hero in enumerate(heroes, 1):
                 html_parts.append(f"<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3b82f6;'>")
                 html_parts.append(f"<h4 style='margin-top: 0;'>Hero {idx}</h4>")
                 if hero.get('name'):
                     html_parts.append(f"<p><strong>Name:</strong> {hero['name']}</p>")
                 if hero.get('age_at_story'):
-                    html_parts.append(f"<p><strong>Age:</strong> {hero['age_at_story']}</p>")
+                    html_parts.append(f"<p><strong>Age at time of story:</strong> {hero['age_at_story']}</p>")
                 if hero.get('relationship_to_user'):
-                    html_parts.append(f"<p><strong>Relationship:</strong> {hero['relationship_to_user']}</p>")
+                    html_parts.append(f"<p><strong>Relationship to user:</strong> {hero['relationship_to_user']}</p>")
                 if hero.get('physical_descriptors'):
-                    html_parts.append(f"<p><strong>Physical:</strong> {hero['physical_descriptors']}</p>")
+                    html_parts.append(f"<p><strong>Physical descriptors:</strong> {hero['physical_descriptors']}</p>")
                 if hero.get('personality_traits'):
-                    html_parts.append(f"<p><strong>Personality:</strong> {hero['personality_traits']}</p>")
+                    html_parts.append(f"<p><strong>Personality traits:</strong> {hero['personality_traits']}</p>")
+                if hero.get('photo_url'):
+                    html_parts.append(f"<p><strong>Photo:</strong> <a href='{hero['photo_url']}' target='_blank'>View Photo</a></p>")
                 html_parts.append("</div>")
         
-        # Supporting Characters
+        # STEP 3: Supporting Characters
         supporting = story_data.get('supporting_characters', [])
         if supporting:
-            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>👥 Supporting Characters</h3>")
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>Step 3: Supporting Characters</h3>")
             for idx, char in enumerate(supporting, 1):
                 html_parts.append(f"<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #8b5cf6;'>")
                 html_parts.append(f"<h4 style='margin-top: 0;'>Supporting Character {idx}</h4>")
@@ -349,44 +338,72 @@ class EmailService:
                     html_parts.append(f"<p><strong>Role:</strong> {char['role']}</p>")
                 if char.get('description'):
                     html_parts.append(f"<p><strong>Description:</strong> {char['description']}</p>")
+                if char.get('photo_url'):
+                    html_parts.append(f"<p><strong>Photo:</strong> <a href='{char['photo_url']}' target='_blank'>View Photo</a></p>")
                 html_parts.append("</div>")
         
-        # Setting Details
+        # STEP 4: Photo Upload (if any photos were uploaded)
+        has_photos = False
+        photo_parts = []
+        if heroes:
+            for hero in heroes:
+                if hero.get('photo_url'):
+                    has_photos = True
+                    photo_parts.append(f"<p><strong>{hero.get('name', 'Hero')}:</strong> <a href='{hero['photo_url']}' target='_blank'>View Photo</a></p>")
+        if supporting:
+            for char in supporting:
+                if char.get('photo_url'):
+                    has_photos = True
+                    photo_parts.append(f"<p><strong>{char.get('name', 'Supporting Character')}:</strong> <a href='{char['photo_url']}' target='_blank'>View Photo</a></p>")
+        
+        if has_photos:
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>Step 4: Character Photos</h3>")
+            html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
+            html_parts.extend(photo_parts)
+            html_parts.append("</div>")
+        
+        # STEP 5: Setting & Time
         setting_parts = []
         if story_data.get('story_location') and story_data.get('story_location') != 'Unknown':
-            setting_parts.append(f"<p><strong>Location:</strong> {story_data['story_location']}</p>")
+            setting_parts.append(f"<p><strong>Where does the story happen?</strong> {story_data['story_location']}</p>")
         if story_data.get('story_timeframe') and story_data.get('story_timeframe') != 'Unknown':
-            setting_parts.append(f"<p><strong>Timeframe:</strong> {story_data['story_timeframe']}</p>")
+            setting_parts.append(f"<p><strong>What time period?</strong> {story_data['story_timeframe']}</p>")
         if story_data.get('season_time_of_year'):
-            setting_parts.append(f"<p><strong>Season/Time of Year:</strong> {story_data['season_time_of_year']}</p>")
+            setting_parts.append(f"<p><strong>Season/time of year?</strong> {story_data['season_time_of_year']}</p>")
         if story_data.get('environmental_details'):
-            setting_parts.append(f"<p><strong>Environmental Details:</strong> {story_data['environmental_details']}</p>")
+            setting_parts.append(f"<p><strong>Any meaningful environmental details?</strong> {story_data['environmental_details']}</p>")
         
         if setting_parts:
-            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>🌍 Setting Details</h3>")
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>Step 5: Setting & Time</h3>")
             html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
             html_parts.extend(setting_parts)
             html_parts.append("</div>")
         
-        # Story Type & Perspective
-        story_type_parts = []
-        if story_data.get('story_type'):
-            story_type_parts.append(f"<p><strong>Story Type:</strong> {story_data['story_type'].replace('_', ' ').title()}</p>")
+        # STEP 6: Story Type
+        if story_data.get('story_type') and story_data.get('story_type') != 'other':
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>Step 6: Story Type</h3>")
+            html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
+            story_type_display = story_data['story_type'].replace('_', ' ').title()
+            html_parts.append(f"<p><strong>What type of story do you want?</strong> {story_type_display}</p>")
+            html_parts.append("</div>")
         
+        # STEP 7: Audience & Perspective
+        audience_parts = []
         audience = story_data.get('audience', {})
         if isinstance(audience, dict):
             if audience.get('who_will_see_first'):
-                story_type_parts.append(f"<p><strong>Audience:</strong> {audience['who_will_see_first']}</p>")
+                audience_parts.append(f"<p><strong>Who will see this first?</strong> {audience['who_will_see_first']}</p>")
             if audience.get('desired_feeling'):
-                story_type_parts.append(f"<p><strong>Desired Feeling:</strong> {audience['desired_feeling']}</p>")
+                audience_parts.append(f"<p><strong>What do you want them to feel?</strong> {audience['desired_feeling']}</p>")
         
         if story_data.get('perspective'):
-            story_type_parts.append(f"<p><strong>Perspective:</strong> {story_data['perspective'].replace('_', ' ').title()}</p>")
+            perspective_display = story_data['perspective'].replace('_', ' ').title()
+            audience_parts.append(f"<p><strong>What perspective?</strong> {perspective_display}</p>")
         
-        if story_type_parts:
-            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>🎬 Story Style & Perspective</h3>")
+        if audience_parts:
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>Step 7: Audience & Perspective</h3>")
             html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
-            html_parts.extend(story_type_parts)
+            html_parts.extend(audience_parts)
             html_parts.append("</div>")
         
         return "\n".join(html_parts) if html_parts else "<p>Story details captured successfully.</p>"

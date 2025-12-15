@@ -1033,8 +1033,9 @@ async def chat(
                                         missing_fields.append("Story timeframe")
                                     
                                     # Step 6: Story type
-                                    if not final_metadata.get('story_type'):
-                                        missing_fields.append("Story type")
+                                    story_type = final_metadata.get('story_type', '').strip().lower()
+                                    if not story_type or story_type == 'other' or story_type == 'unknown':
+                                        missing_fields.append("Story type (please choose: romantic, childhood drama, fantasy, epic/legend, adventure, historic action, documentary tone, or other)")
                                     
                                     # Step 7: Audience & Perspective
                                     audience = final_metadata.get('audience', {})
