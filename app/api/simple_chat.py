@@ -38,11 +38,12 @@ async def send_event(_event: dict) -> None:
     return
 
 def _is_story_completion_text(text: str) -> bool:
-    """Heuristic to detect completion based on assistant text."""
+    """Heuristic to detect completion based on text (user or assistant)."""
     if not text:
         return False
     normalized = text.lower()
     completion_markers = [
+        # Explicit completion phrases
         "the story is complete",
         "your story is complete",
         "story is complete",
@@ -50,14 +51,32 @@ def _is_story_completion_text(text: str) -> bool:
         "we've reached the end",
         "the end of the story",
         "conclusion of the story",
-        "would you like to create another story",  # Matches: "Would you like to create another story?"
+        "story ends",
+        "the story ends",
+        "story ending",
+        "story concluded",
+        # User completion signals
+        "there's no more to it",
+        "no more to it",
+        "that's the end",
+        "that's all",
+        "the end",
+        "story ends with",
+        "ends with",
+        "the story ends in",
+        "story ends in",
+        "last scene",
+        "final scene",
+        "ending scene",
+        # Assistant transition phrases
+        "would you like to create another story",
         "would you like to start another story",
         "would you like to begin another story",
         "new story",
         "start a new story",
         "create another story",
-        "sign up to create unlimited",  # Matches: "Sign up to create unlimited stories..."
-        "create unlimited stories",  # Additional variant
+        "sign up to create unlimited",
+        "create unlimited stories",
     ]
     result = any(marker in normalized for marker in completion_markers)
     if result:
@@ -876,8 +895,24 @@ async def chat(
                         if message_count < MIN_MESSAGES_FOR_COMPLETION:
                             print(f"⏭️ [COMPLETION CHECK] Skipping completion check - only {message_count} messages (minimum {MIN_MESSAGES_FOR_COMPLETION} required)")
                         else:
-                            is_complete = _is_story_completion_text(full_response)
-                            print(f"🔍 [COMPLETION CHECK] Is complete: {is_complete}")
+                            # Check BOTH assistant response AND user's latest message for completion signals
+                            # User often says "the story ends" or "there's no more to it" which should trigger completion
+                            user_completion = False
+                            if updated_history_for_completion:
+                                # Get the last user message
+                                user_messages = [m for m in updated_history_for_completion if m.get("role") == "user"]
+                                if user_messages:
+                                    last_user_message = user_messages[-1].get("content", "")
+                                    user_completion = _is_story_completion_text(last_user_message)
+                                    if user_completion:
+                                        print(f"🎯 [COMPLETION] Detected completion signal in USER message: {last_user_message[:200]}...")
+                            
+                            # Check assistant response
+                            assistant_completion = _is_story_completion_text(full_response)
+                            
+                            # Story is complete if EITHER user or assistant indicates completion
+                            is_complete = user_completion or assistant_completion
+                            print(f"🔍 [COMPLETION CHECK] User completion: {user_completion}, Assistant completion: {assistant_completion}, Final: {is_complete}")
                         
                         if is_complete:
                             print("✅ Story completion detected. Generating script and transcript for validation.")
