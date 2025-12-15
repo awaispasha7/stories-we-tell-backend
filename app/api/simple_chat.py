@@ -595,12 +595,18 @@ async def chat(
                         )
                     
                     # Update dossier if needed (after both user and assistant messages are saved)
-                    # IMPORTANT: re-fetch conversation history so it includes the assistant's reply we just saved
-                    # Fetch ALL messages for dossier (no limit to get complete conversation)
+                    # IMPORTANT: Fetch ALL messages from ALL sessions in the project for dossier extraction
+                    # This ensures the dossier LLM sees the complete story across all sessions
                     updated_conversation_history = conversation_history
                     try:
-                        updated_conversation_history = await _get_conversation_history(str(session_id), str(user_id), limit=None)
-                        print(f"📋 [DOSSIER CHECK] Conversation history length: {len(updated_conversation_history)}")
+                        if project_id:
+                            # Get ALL messages from ALL sessions in the project
+                            updated_conversation_history = await _get_project_conversation_history(str(project_id), str(user_id), limit=None)
+                            print(f"📋 [DOSSIER CHECK] Project conversation history length: {len(updated_conversation_history)} (from all sessions)")
+                        else:
+                            # Fallback to single session if no project_id
+                            updated_conversation_history = await _get_conversation_history(str(session_id), str(user_id), limit=None)
+                            print(f"📋 [DOSSIER CHECK] Session conversation history length: {len(updated_conversation_history)}")
                     except Exception as _history_e:
                         print(f"⚠️ Failed to refresh conversation history before dossier update: {_history_e}")
 
@@ -876,13 +882,16 @@ async def chat(
                         if is_complete:
                             print("✅ Story completion detected. Generating script and transcript for validation.")
                             
-                            # FINAL COMPREHENSIVE DOSSIER UPDATE - Extract from ENTIRE conversation
-                            print("📋 [FINAL DOSSIER] Performing final comprehensive dossier extraction from entire conversation...")
+                            # FINAL COMPREHENSIVE DOSSIER UPDATE - Extract from ENTIRE conversation across ALL sessions
+                            print("📋 [FINAL DOSSIER] Performing final comprehensive dossier extraction from entire project conversation...")
                             try:
-                                if dossier_extractor and project_id and len(updated_history_for_completion) >= 2:
-                                    # Extract from ENTIRE conversation history (not just recent messages)
-                                    print(f"📋 [FINAL DOSSIER] Extracting from {len(updated_history_for_completion)} total messages")
-                                    final_metadata = await dossier_extractor.extract_metadata(updated_history_for_completion)
+                                if dossier_extractor and project_id:
+                                    # Get ALL messages from ALL sessions in the project for final extraction
+                                    final_project_history = await _get_project_conversation_history(str(project_id), str(user_id), limit=None)
+                                    print(f"📋 [FINAL DOSSIER] Extracting from {len(final_project_history)} total messages across all sessions in project")
+                                    
+                                    if len(final_project_history) >= 2:
+                                        final_metadata = await dossier_extractor.extract_metadata(final_project_history)
                                     print(f"📋 [FINAL DOSSIER] Final extraction complete. Characters: {len(final_metadata.get('characters', []))}")
                                     
                                     # Fetch existing dossier to merge
@@ -1333,7 +1342,7 @@ async def _save_message(
     return message_id
 
 async def _get_conversation_history(session_id: str, user_id: str, limit: int = None) -> List[Dict]:
-    """Get conversation history for context. If limit is None, fetches all messages."""
+    """Get conversation history for context. If limit is None, fetches ALL messages (no limit)."""
     supabase = get_supabase_client()
     
     # Build query
@@ -1343,9 +1352,14 @@ async def _get_conversation_history(session_id: str, user_id: str, limit: int = 
         .eq("user_id", user_id)\
         .order("created_at", desc=False)
     
-    # Only apply limit if specified
+    # If limit is specified, use it. Otherwise, fetch ALL messages by using a very large limit
+    # Supabase has a default limit, so we need to explicitly set a high limit to get all messages
     if limit is not None:
         query = query.limit(limit)
+    else:
+        # Fetch all messages - use a very large limit (10,000 should be more than enough)
+        # If we need more, we can implement pagination
+        query = query.limit(10000)
     
     result = query.execute()
     
@@ -1362,7 +1376,78 @@ async def _get_conversation_history(session_id: str, user_id: str, limit: int = 
             "attached_files": message.get("metadata", {}).get("attached_files", [])
         })
     
-    print(f"📚 Retrieved {len(conversation)} messages from conversation history for session {session_id}")
+    print(f"📚 Retrieved {len(conversation)} messages from conversation history for session {session_id} (limit={'ALL' if limit is None else limit})")
+    return conversation
+
+async def _get_project_conversation_history(project_id: str, user_id: str, limit: int = None) -> List[Dict]:
+    """
+    Get ALL conversation history from ALL sessions in a project.
+    This is used for dossier extraction to ensure the LLM sees the complete story across all sessions.
+    
+    Args:
+        project_id: The project ID
+        user_id: The user ID
+        limit: Optional limit (if None, fetches all messages up to 10,000)
+    
+    Returns:
+        List of messages from all sessions in the project, ordered chronologically
+    """
+    supabase = get_supabase_client()
+    
+    # First, get all session IDs for this project
+    sessions_result = supabase.table("sessions")\
+        .select("session_id")\
+        .eq("project_id", project_id)\
+        .eq("user_id", user_id)\
+        .execute()
+    
+    if not sessions_result.data:
+        print(f"📚 No sessions found for project {project_id}")
+        return []
+    
+    session_ids = [session["session_id"] for session in sessions_result.data]
+    print(f"📚 Found {len(session_ids)} sessions in project {project_id}: {session_ids}")
+    
+    # If no sessions, return empty list
+    if not session_ids:
+        print(f"📚 No sessions found for project {project_id}")
+        return []
+    
+    # Get all messages from all sessions in this project
+    # Use .in_() to query multiple session_ids
+    # Note: Supabase Python client uses .in_() for filtering by multiple values
+    query = supabase.table("chat_messages")\
+        .select("*")\
+        .in_("session_id", session_ids)\
+        .eq("user_id", user_id)\
+        .order("created_at", desc=False)  # Order chronologically across all sessions
+    
+    # If limit is specified, use it. Otherwise, fetch ALL messages
+    if limit is not None:
+        query = query.limit(limit)
+    else:
+        # Fetch all messages - use a very large limit (10,000 should be more than enough)
+        query = query.limit(10000)
+    
+    result = query.execute()
+    
+    if not result.data:
+        print(f"📚 No messages found for project {project_id}")
+        return []
+    
+    # Convert to conversation format
+    conversation = []
+    for message in result.data:
+        conversation.append({
+            "role": message["role"],
+            "content": message["content"],
+            "timestamp": message["created_at"],
+            "attached_files": message.get("metadata", {}).get("attached_files", []),
+            "session_id": message["session_id"]  # Include session_id for debugging
+        })
+    
+    print(f"📚 Retrieved {len(conversation)} messages from ALL sessions in project {project_id} (limit={'ALL' if limit is None else limit})")
+    print(f"📚 Messages from sessions: {set(msg.get('session_id') for msg in conversation)}")
     return conversation
 
 async def _update_session_activity(session_id: str):
@@ -1374,61 +1459,6 @@ async def _update_session_activity(session_id: str):
         "updated_at": datetime.now(timezone.utc).isoformat()
     }).eq("session_id", session_id).execute()
 
-@router.get("/sessions/{session_id}/messages")
-async def get_session_messages(
-    session_id: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
-):
-    """Get messages for a specific session"""
-    try:
-        # Verify session exists and user has access
-        session_info = await SimpleSessionManager.get_or_create_session(
-            session_id=session_id,
-            user_id=UUID(x_user_id) if x_user_id else None
-        )
-        
-        messages = await _get_conversation_history(session_id, str(session_info["user_id"]), limit=50)
-        
-        # Check PROJECT completion status (not just session) - if ANY session in project is completed, lock ALL sessions
-        story_completed = False
-        project_id = session_info.get("project_id")
-        
-        try:
-            supabase = get_supabase_client()
-            
-            # First check if this specific session is completed
-            session_result = supabase.table("sessions").select("story_completed, project_id").eq("session_id", session_id).single().execute()
-            if session_result.data:
-                story_completed = session_result.data.get("story_completed", False)
-                # If project_id wasn't in session_info, get it from the session record
-                if not project_id and session_result.data.get("project_id"):
-                    project_id = session_result.data.get("project_id")
-            
-            # CRITICAL: Check if ANY session in the project is completed
-            # If so, lock ALL sessions in that project
-            if project_id:
-                print(f"🔍 [COMPLETION CHECK] Checking project {project_id} for completed sessions...")
-                project_result = supabase.table("sessions").select("story_completed, session_id").eq("project_id", str(project_id)).eq("story_completed", True).limit(1).execute()
-                print(f"🔍 [COMPLETION CHECK] Project query result: {len(project_result.data) if project_result.data else 0} completed sessions found")
-                if project_result.data and len(project_result.data) > 0:
-                    story_completed = True
-                    print(f"🔒 [COMPLETION] Project {project_id} has completed sessions - locking all sessions in project")
-                    print(f"🔒 [COMPLETION] Completed session found: {project_result.data[0].get('session_id')}")
-        except Exception as e:
-            print(f"⚠️ Error checking completion status: {e}")
-            import traceback
-            print(f"⚠️ Traceback: {traceback.format_exc()}")
-        
-        print(f"📤 [COMPLETION] Returning story_completed={story_completed} (type: {type(story_completed).__name__}) for session {session_id}, project {project_id}")
-        return {
-            "success": True,
-            "session_id": session_id,
-            "messages": messages,
-            "is_authenticated": session_info["is_authenticated"],
-            "story_completed": bool(story_completed),  # Explicitly convert to boolean
-            "project_id": str(project_id) if project_id else None
-        }
-        
-    except Exception as e:
-        print(f"Error getting session messages: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# NOTE: This endpoint is handled by simple_session_manager.py
+# Removed duplicate endpoint to avoid conflicts - the endpoint in simple_session_manager.py
+# properly handles limit and offset query parameters

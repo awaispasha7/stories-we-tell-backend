@@ -3,7 +3,7 @@ Simplified Session Manager
 Clean, single-system approach for session management
 """
 
-from fastapi import APIRouter, HTTPException, Header, Body
+from fastapi import APIRouter, HTTPException, Header, Body, Query
 from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime, timezone, timedelta
@@ -495,7 +495,8 @@ async def get_user_sessions(
 @router.get("/sessions/{session_id}/messages")
 async def get_session_messages(
     session_id: str,
-    limit: int = 50,
+    limit: int = Query(500, ge=1, le=10000),  # Allow up to 10000 messages, default 500
+    offset: int = Query(0, ge=0),  # Support pagination
     user_id: Optional[str] = Header(None, alias="X-User-ID")
 ):
     """Get messages for a specific session"""
@@ -516,8 +517,17 @@ async def get_session_messages(
             print(f"❌ Access denied - session belongs to {session['user_id']}, but user is {user_id}")
             raise HTTPException(status_code=403, detail="Access denied")
         
-        # Get messages
-        messages_result = supabase.table("chat_messages").select("*").eq("session_id", session_id).order("created_at", desc=False).limit(limit).execute()
+        # Get messages with limit and offset support
+        # Supabase uses range() for offset + limit: range(offset, offset + limit - 1)
+        # For example: range(0, 49) gets first 50 messages, range(50, 99) gets next 50
+        messages_result = supabase.table("chat_messages")\
+            .select("*")\
+            .eq("session_id", session_id)\
+            .order("created_at", desc=False)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+        
+        print(f"📋 [MESSAGES] Fetched {len(messages_result.data) if messages_result.data else 0} messages (limit={limit}, offset={offset})")
         
         # Check PROJECT completion status (not just session) - if ANY session in project is completed, lock ALL sessions
         story_completed = False
@@ -576,6 +586,49 @@ async def get_session_messages(
         raise
     except Exception as e:
         print(f"Error getting session messages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sessions/{session_id}/message-count")
+async def get_session_message_count(
+    session_id: str,
+    user_id: Optional[str] = Header(None, alias="X-User-ID")
+):
+    """Get the exact message count for a session without fetching all messages"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Verify session exists and user has access
+        session_result = supabase.table("sessions").select("*").eq("session_id", session_id).execute()
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        session = session_result.data[0]
+        
+        if user_id and session["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get message count efficiently by selecting only message_id with a high limit
+        # This is more efficient than fetching all message content
+        messages_result = supabase.table("chat_messages")\
+            .select("message_id")\
+            .eq("session_id", session_id)\
+            .limit(10000)\
+            .execute()
+        
+        # Count the results (up to 10000 limit)
+        message_count = len(messages_result.data) if messages_result.data else 0
+        
+        print(f"📊 Message count for session {session_id}: {message_count}")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "message_count": message_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting session message count: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/sessions/{session_id}")
