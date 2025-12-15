@@ -175,8 +175,49 @@ class SimpleSessionManager:
                         "logline": "",
                         "genre": "",
                         "tone": "",
+                        # Story Frame
+                        "story_timeframe": "",
+                        "story_location": "",
+                        "story_world_type": "",
+                        "writer_connection_place_time": "",
+                        "season_time_of_year": "",
+                        "environmental_details": "",
+                        # Character (Legacy)
+                        "subject_exists_real_world": "unknown",
+                        "subject_full_name": "",
+                        "subject_relationship_to_writer": "",
+                        "subject_brief_description": "",
+                        # Heroes (Primary Characters - NEW)
+                        "heroes": [],
+                        # Supporting Characters (Secondary Characters - NEW)
+                        "supporting_characters": [],
+                        # Story Craft
+                        "problem_statement": "",
+                        "actions_taken": "",
+                        "outcome": "",
+                        "likes_in_story": "",
+                        # Story Type & Style (NEW)
+                        "story_type": "other",
+                        "audience": {
+                            "who_will_see_first": "",
+                            "desired_feeling": ""
+                        },
+                        "perspective": "narrator_voice",
+                        # Technical
+                        "runtime": "3-5 minutes",
+                        # Legacy Characters (for backward compatibility)
                         "characters": [],
+                        # Scenes
                         "scenes": [],
+                        # Future Phase 2 fields (placeholders)
+                        "synopsis": "",
+                        "full_script": "",
+                        "dialogue": [],
+                        "voiceover_script": {},
+                        "shot_list": {},
+                        "camera_logic": {},
+                        "scene_math": {},
+                        "micro_prompts": [],
                         "created_at": datetime.now(timezone.utc).isoformat()
                     },
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -217,7 +258,7 @@ class SimpleSessionManager:
         session_id = str(uuid4())
         new_project_id = project_id or uuid4()
         
-        # For anonymous users, ensure dossier exists with proper title (not "Untitled Project")
+        # For anonymous users, ensure dossier exists with enhanced structure
         dossier_check = supabase.table("dossier").select("*").eq("project_id", str(new_project_id)).execute()
         if not dossier_check.data:
             dossier_data = {
@@ -228,8 +269,49 @@ class SimpleSessionManager:
                     "logline": "",
                     "genre": "",
                     "tone": "",
+                    # Story Frame
+                    "story_timeframe": "",
+                    "story_location": "",
+                    "story_world_type": "",
+                    "writer_connection_place_time": "",
+                    "season_time_of_year": "",
+                    "environmental_details": "",
+                    # Character (Legacy)
+                    "subject_exists_real_world": "unknown",
+                    "subject_full_name": "",
+                    "subject_relationship_to_writer": "",
+                    "subject_brief_description": "",
+                    # Heroes (Primary Characters - NEW)
+                    "heroes": [],
+                    # Supporting Characters (Secondary Characters - NEW)
+                    "supporting_characters": [],
+                    # Story Craft
+                    "problem_statement": "",
+                    "actions_taken": "",
+                    "outcome": "",
+                    "likes_in_story": "",
+                    # Story Type & Style (NEW)
+                    "story_type": "other",
+                    "audience": {
+                        "who_will_see_first": "",
+                        "desired_feeling": ""
+                    },
+                    "perspective": "narrator_voice",
+                    # Technical
+                    "runtime": "3-5 minutes",
+                    # Legacy Characters (for backward compatibility)
                     "characters": [],
+                    # Scenes
                     "scenes": [],
+                    # Future Phase 2 fields (placeholders)
+                    "synopsis": "",
+                    "full_script": "",
+                    "dialogue": [],
+                    "voiceover_script": {},
+                    "shot_list": {},
+                    "camera_logic": {},
+                    "scene_math": {},
+                    "micro_prompts": [],
                     "created_at": datetime.now(timezone.utc).isoformat()
                 },
                 "created_at": datetime.now(timezone.utc).isoformat(),

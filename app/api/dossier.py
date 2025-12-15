@@ -152,7 +152,10 @@ async def initialize_dossier(
         if existing_dossier:
             return existing_dossier
         
-        # Create new dossier with default structure
+        # Create new dossier with enhanced default structure
+        from datetime import datetime, timezone
+        current_time = datetime.now(timezone.utc).isoformat()
+        
         dossier_data = DossierCreate(
             project_id=project_id,
             user_id=user_id,
@@ -161,9 +164,50 @@ async def initialize_dossier(
                 "logline": "",
                 "genre": "",
                 "tone": "",
+                # Story Frame
+                "story_timeframe": "",
+                "story_location": "",
+                "story_world_type": "",
+                "writer_connection_place_time": "",
+                "season_time_of_year": "",
+                "environmental_details": "",
+                # Character (Legacy)
+                "subject_exists_real_world": "unknown",
+                "subject_full_name": "",
+                "subject_relationship_to_writer": "",
+                "subject_brief_description": "",
+                # Heroes (Primary Characters - NEW)
+                "heroes": [],
+                # Supporting Characters (Secondary Characters - NEW)
+                "supporting_characters": [],
+                # Story Craft
+                "problem_statement": "",
+                "actions_taken": "",
+                "outcome": "",
+                "likes_in_story": "",
+                # Story Type & Style (NEW)
+                "story_type": "other",
+                "audience": {
+                    "who_will_see_first": "",
+                    "desired_feeling": ""
+                },
+                "perspective": "narrator_voice",
+                # Technical
+                "runtime": "3-5 minutes",
+                # Legacy Characters (for backward compatibility)
                 "characters": [],
+                # Scenes
                 "scenes": [],
-                "created_at": "2025-01-17T00:00:00Z"
+                # Future Phase 2 fields (placeholders)
+                "synopsis": "",
+                "full_script": "",
+                "dialogue": [],
+                "voiceover_script": {},
+                "shot_list": {},
+                "camera_logic": {},
+                "scene_math": {},
+                "micro_prompts": [],
+                "created_at": current_time
             }
         )
         

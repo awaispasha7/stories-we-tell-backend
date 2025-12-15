@@ -1470,14 +1470,14 @@ async def _get_project_conversation_history(project_id: str, user_id: str, limit
         print(f"📚 No messages found for project {project_id}")
         return []
     
-    # Convert to conversation format
+    # Convert to conversation format - include attached_files from metadata
     conversation = []
     for message in result.data:
         conversation.append({
             "role": message["role"],
             "content": message["content"],
             "timestamp": message["created_at"],
-            "attached_files": message.get("metadata", {}).get("attached_files", []),
+            "attached_files": message.get("metadata", {}).get("attached_files", []),  # Include attached files for photo association
             "session_id": message["session_id"]  # Include session_id for debugging
         })
     

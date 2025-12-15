@@ -38,11 +38,69 @@ class DossierExtractor:
         # Ensure we're initialized
         self._ensure_initialized()
         
-        # Build conversation context
-        context = "\n".join([
-            f"{msg['role'].upper()}: {msg['content']}"
-            for msg in conversation_history
-        ])
+        # Build conversation context - include attached files information
+        context_parts = []
+        photo_urls_by_character = {}  # Track photo URLs mentioned for characters
+        
+        for msg in conversation_history:
+            role = msg.get('role', 'unknown').upper()
+            content = msg.get('content', '')
+            attached_files = msg.get('attached_files', []) or []
+            
+            # Build message line
+            msg_line = f"{role}: {content}"
+            
+            # If there are attached files, include them in context
+            if attached_files:
+                file_info = []
+                for file in attached_files:
+                    file_name = file.get('name', 'unknown')
+                    file_url = file.get('url', '')
+                    file_type = file.get('type', 'unknown')
+                    
+                    if file_type == 'image' or file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                        file_info.append(f"[IMAGE: {file_name} - URL: {file_url}]")
+                        # Try to extract character name from the message content
+                        # Look for patterns like "this is [name]", "this is my [character]", "[name]'s photo", etc.
+                        import re
+                        # Common patterns: "this is John", "this is my character John", "John's photo", "photo of Mary", "here's John"
+                        char_patterns = [
+                            r"this is (?:my )?(?:character )?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+                            r"this is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s",
+                            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s photo",
+                            r"photo of ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+                            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?) (?:is|looks like|appears as)",
+                            r"here'?s ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+                            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?) (?:photo|picture|image)",
+                            r"meet ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+                            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?) (?:here|attached)",
+                        ]
+                        for pattern in char_patterns:
+                            match = re.search(pattern, content, re.IGNORECASE)
+                            if match:
+                                char_name = match.group(1).strip()
+                                # Normalize name (capitalize first letter of each word)
+                                char_name = ' '.join(word.capitalize() for word in char_name.split())
+                                if char_name not in photo_urls_by_character:
+                                    photo_urls_by_character[char_name] = []
+                                photo_urls_by_character[char_name].append(file_url)
+                                print(f"📸 [PHOTO ASSOCIATION] Found photo for character '{char_name}': {file_url[:50]}...")
+                                break
+                
+                if file_info:
+                    msg_line += " " + " ".join(file_info)
+            
+            context_parts.append(msg_line)
+        
+        context = "\n".join(context_parts)
+        
+        # Add photo URL mapping to the prompt for reference
+        photo_context = ""
+        if photo_urls_by_character:
+            photo_context = "\n\nPHOTO URLS FOUND IN CONVERSATION:\n"
+            for char_name, urls in photo_urls_by_character.items():
+                photo_context += f"- {char_name}: {', '.join(urls)}\n"
+            photo_context += "\nWhen extracting characters, use these photo URLs for the matching character names.\n"
         
         # Enhanced extraction prompt - Includes heroes, supporting characters, story type, perspective
         extraction_prompt = f"""Based on this ENTIRE conversation about a story, extract structured metadata following the client's comprehensive framework.
@@ -57,7 +115,7 @@ CRITICAL INSTRUCTIONS:
 7. The outcome MUST reflect how the story actually ends - read to the very end of the conversation to find the final resolution
 
 Conversation:
-{context}
+{context}{photo_context}
 
 Extract the following information (use "Unknown" if not mentioned). Always include all keys. If something is not present, use empty string for strings and [] for arrays.
 
@@ -92,11 +150,18 @@ HEROES (array; up to 2 heroes - PRIMARY characters):
 - physical_descriptors: Physical appearance details
 - personality_traits: Personality characteristics
 - photo_url: URL if photo was uploaded (empty string if not)
+  * CRITICAL: Look for photo URLs in the conversation history where the user mentions the character's name
+  * If the user says "this is John" or "this is my character John" with an image attached, use that image URL for John's photo_url
+  * Match photo URLs to character names based on the message context where the photo was shared
 
 SUPPORTING CHARACTERS (array; up to 2 - SECONDARY characters):
 - name: Full name
 - role: Role in story (e.g., "mentor", "antagonist", "friend")
 - description: Brief description (light metadata)
+- photo_url: URL if photo was uploaded (empty string if not)
+  * CRITICAL: Look for photo URLs in the conversation history where the user mentions the character's name
+  * If the user says "this is Mary" or mentions a supporting character with an image attached, use that image URL
+  * Match photo URLs to character names based on the message context where the photo was shared
 
 STORY CRAFT (CRITICAL - Extract the ACTUAL/FINAL story elements, not just early mentions):
 11. problem_statement: What is the ACTUAL/CORE problem the character faces in this story? 
