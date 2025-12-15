@@ -317,14 +317,16 @@ class AIModelManager:
         1. STORY FRAME: story_timeframe → story_location → story_world_type → writer_connection_place_time → season_time_of_year → environmental_details
         2. HERO CHARACTERS (Primary - up to 2):
            - For EACH hero, collect: name → age_at_story → relationship_to_user → physical_descriptors → personality_traits
+           - AFTER collecting hero details, ALWAYS ask: "Do you have a photo of [hero name]? You can upload it now or skip and we'll send you a link later."
            - Ask: "Is there a second hero in the story?" (if first hero collected)
         3. SUPPORTING CHARACTERS (Secondary - up to 2):
            - Ask: "Are there other important people in the story?"
            - For each: name → role → description (light metadata)
+           - AFTER collecting supporting character details, OPTIONALLY ask: "Do you have a photo of [character name]? (optional)"
         4. STORY TYPE: Ask "What type of story do you want?" (romantic, childhood_drama, fantasy, epic_legend, adventure, historic_action, documentary_tone, other)
         5. AUDIENCE & PERSPECTIVE:
-           - "Who will see this first?" → "What do you want them to feel?"
-           - "What perspective?" (first_person, narrator_voice, legend_myth_tone, documentary_tone)
+           - "Who will see this first?" → "What do you want them to feel?" → "What perspective?" (first_person, narrator_voice, legend_myth_tone, documentary_tone)
+           - CRITICAL: You MUST ask ALL THREE questions: who_will_see_first, desired_feeling, and perspective
         6. CHARACTER (Subject - Legacy): subject_exists_real_world → subject_full_name → subject_relationship_to_writer → subject_brief_description
         7. STORY CRAFT: problem_statement → actions_taken → outcome → likes_in_story
         8. TECHNICAL: runtime (3-5 minutes) → title
@@ -387,11 +389,13 @@ class AIModelManager:
         - If story_timeframe is Unknown → Ask "When does your story take place?"
         - If story_location is Unknown → Ask "Where does it take place?"
         - If heroes array is empty → Ask "Who is the main character of your story?" then collect: name, age, relationship, physical descriptors, personality
+        - If hero details collected but photo not requested → Ask "Do you have a photo of [hero name]? You can upload it now or skip and we'll send you a link later."
         - If first hero collected and second hero not asked → Ask "Is there a second hero in the story?"
         - If supporting_characters not asked → Ask "Are there other important people in the story?" (up to 2)
+        - If supporting character details collected → OPTIONALLY ask "Do you have a photo of [character name]? (optional)"
         - If story_type is Unknown → Ask "What type of story do you want?" (offer: romantic, childhood_drama, fantasy, epic_legend, adventure, historic_action, documentary_tone, other)
         - If audience.who_will_see_first is empty → Ask "Who will see this first?"
-        - If audience.desired_feeling is empty → Ask "What do you want them to feel?"
+        - If audience.desired_feeling is empty → Ask "What do you want them to feel?" (CRITICAL: Must ask this after who_will_see_first)
         - If perspective is Unknown → Ask "What perspective?" (first_person, narrator_voice, legend_myth_tone, documentary_tone)
         - If subject_full_name is Unknown (legacy) → Ask "What's your main character's name?"
         - If problem_statement is Unknown → Ask "What problem does [character] face?"

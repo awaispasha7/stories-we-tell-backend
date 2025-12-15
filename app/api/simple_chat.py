@@ -915,7 +915,7 @@ async def chat(
                             print(f"🔍 [COMPLETION CHECK] User completion: {user_completion}, Assistant completion: {assistant_completion}, Final: {is_complete}")
                         
                         if is_complete:
-                            print("✅ Story completion detected. Generating script and transcript for validation.")
+                            print("✅ Story completion detected. Performing final dossier extraction and validation...")
                             
                             # FINAL COMPREHENSIVE DOSSIER UPDATE - Extract from ENTIRE conversation across ALL sessions
                             print("📋 [FINAL DOSSIER] Performing final comprehensive dossier extraction from entire project conversation...")
@@ -997,21 +997,72 @@ async def chat(
                                         
                                         print(f"📋 [FINAL DOSSIER] Merged characters: {len(final_metadata['characters'])} (deduplicated)")
                                     
-                                    # Update dossier with final comprehensive extraction
-                                    dossier_update = DossierUpdate(snapshot_json=final_metadata)
-                                    updated_dossier = session_service.update_dossier(
-                                        UUID(project_id),
-                                        UUID(user_id),
-                                        dossier_update
-                                    )
-                                    if updated_dossier:
-                                        print(f"✅ [FINAL DOSSIER] Final dossier updated: {len(final_metadata.get('characters', []))} characters")
-                                        # Emit dossier updated event
-                                        await send_event({
-                                            "type": "dossier_updated",
-                                            "project_id": str(project_id),
-                                            "dossier": final_metadata
-                                        })
+                                    # VALIDATE REQUIRED INFORMATION - Ensure all client intake requirements are met
+                                    missing_fields = []
+                                    
+                                    # Step 2: At least 1 hero character with required fields
+                                    heroes = final_metadata.get('heroes', [])
+                                    if not heroes or len(heroes) == 0:
+                                        missing_fields.append("Hero character information (name, age, relationship)")
+                                    else:
+                                        for idx, hero in enumerate(heroes, 1):
+                                            if not hero.get('name'):
+                                                missing_fields.append(f"Hero {idx} name")
+                                            if not hero.get('age_at_story'):
+                                                missing_fields.append(f"Hero {idx} age")
+                                            if not hero.get('relationship_to_user'):
+                                                missing_fields.append(f"Hero {idx} relationship")
+                                    
+                                    # Step 5: Setting information
+                                    if not final_metadata.get('story_location') or final_metadata.get('story_location') == 'Unknown':
+                                        missing_fields.append("Story location")
+                                    if not final_metadata.get('story_timeframe') or final_metadata.get('story_timeframe') == 'Unknown':
+                                        missing_fields.append("Story timeframe")
+                                    
+                                    # Step 6: Story type
+                                    if not final_metadata.get('story_type'):
+                                        missing_fields.append("Story type")
+                                    
+                                    # Step 7: Audience & Perspective
+                                    audience = final_metadata.get('audience', {})
+                                    if not isinstance(audience, dict) or not audience.get('who_will_see_first'):
+                                        missing_fields.append("Audience information (who will see this first)")
+                                    if not isinstance(audience, dict) or not audience.get('desired_feeling'):
+                                        missing_fields.append("Desired feeling (what do you want them to feel?)")
+                                    if not final_metadata.get('perspective'):
+                                        missing_fields.append("Story perspective")
+                                    
+                                    if missing_fields:
+                                        print(f"⚠️ [VALIDATION] Story cannot be completed - missing required information: {', '.join(missing_fields)}")
+                                        # Block completion and ask for missing information
+                                        is_complete = False
+                                        missing_info_prompt = f"\n\n⚠️ Before we can complete your story, I need a bit more information:\n"
+                                        for field in missing_fields:
+                                            missing_info_prompt += f"• {field}\n"
+                                        missing_info_prompt += "\nPlease provide this information so we can finalize your story dossier."
+                                        full_response = full_response.replace("the story is complete", "we're almost done")
+                                        full_response = full_response.replace("story complete", "story almost complete")
+                                        full_response += missing_info_prompt
+                                        print(f"🔄 [VALIDATION] Completion blocked - requesting missing information from user")
+                                    else:
+                                        print("✅ [VALIDATION] All required information collected - proceeding with story completion")
+                                    
+                                    if is_complete:
+                                        # Update dossier with final comprehensive extraction
+                                        dossier_update = DossierUpdate(snapshot_json=final_metadata)
+                                        updated_dossier = session_service.update_dossier(
+                                            UUID(project_id),
+                                            UUID(user_id),
+                                            dossier_update
+                                        )
+                                        if updated_dossier:
+                                            print(f"✅ [FINAL DOSSIER] Final dossier updated: {len(final_metadata.get('characters', []))} characters")
+                                            # Emit dossier updated event
+                                            await send_event({
+                                                "type": "dossier_updated",
+                                                "project_id": str(project_id),
+                                                "dossier": final_metadata
+                                            })
                                     
                                     dossier_snapshot = final_metadata
                                 else:

@@ -15,12 +15,16 @@ class EmailService:
     
     def __init__(self):
         self.api_key = os.getenv("RESEND_API_KEY")
-        self.from_email = os.getenv("FROM_EMAIL", "noreply@storieswetell.com")
-        self.client_email = os.getenv("CLIENT_EMAIL", "client@storieswetell.com")
+        # For free Resend accounts, use Resend's sandbox domain
+        # Default: onboarding@resend.dev (Resend's free tier sandbox domain)
+        self.from_email = os.getenv("FROM_EMAIL", "onboarding@resend.dev")
+        # CLIENT_EMAIL can be comma-separated for multiple internal team members
+        self.client_email = os.getenv("CLIENT_EMAIL", "")
         
         if self.api_key:
             resend.api_key = self.api_key
             self.available = True
+            print(f"✅ Email service initialized - FROM: {self.from_email}")
         else:
             self.available = False
             print("⚠️ RESEND_API_KEY not found - email service disabled")
@@ -67,8 +71,14 @@ class EmailService:
                 project_id=project_id
             )
             
-            # Prepare CC emails (use provided client_emails or fallback to single client_email)
-            cc_emails = client_emails if client_emails else [self.client_email]
+            # Prepare CC emails (use provided client_emails or fallback to CLIENT_EMAIL env var)
+            if client_emails:
+                cc_emails = client_emails
+            elif self.client_email:
+                # Parse comma-separated CLIENT_EMAIL env var
+                cc_emails = [email.strip() for email in self.client_email.split(",") if email.strip()]
+            else:
+                cc_emails = []
             
             # Ensure we have an email to send to
             if not user_email:
@@ -81,10 +91,14 @@ class EmailService:
             email_data = {
                 "from": self.from_email,
                 "to": [final_user_email],
-                "cc": cc_emails,  # CC to multiple clients as requested
                 "subject": subject,
                 "html": html_content
             }
+            
+            # Only add CC if there are emails to CC
+            if cc_emails:
+                email_data["cc"] = cc_emails
+                print(f"📧 CC emails: {cc_emails}")
             
             response = resend.Emails.send(email_data)
             
@@ -208,40 +222,174 @@ class EmailService:
             return False
     
     def _build_story_summary(self, story_data: Dict[str, Any]) -> str:
-        """Build a formatted story summary"""
+        """Build a formatted story summary - Simplified to match client intake requirements only"""
         summary_parts = []
         
-        # Story Frame
-        if story_data.get('story_timeframe') and story_data.get('story_timeframe') != 'Unknown':
-            summary_parts.append(f"📅 Time: {story_data['story_timeframe']}")
+        # Story Overview
+        if story_data.get('title'):
+            summary_parts.append(f"📖 Title: {story_data['title']}")
         
+        if story_data.get('logline'):
+            summary_parts.append(f"📝 Logline: {story_data['logline']}")
+        
+        if story_data.get('genre'):
+            summary_parts.append(f"🎭 Genre: {story_data['genre']}")
+        
+        if story_data.get('tone'):
+            summary_parts.append(f"🎨 Tone: {story_data['tone']}")
+        
+        # Hero Characters (Step 2)
+        heroes = story_data.get('heroes', [])
+        if heroes:
+            for idx, hero in enumerate(heroes, 1):
+                hero_parts = []
+                if hero.get('name'):
+                    hero_parts.append(f"Name: {hero['name']}")
+                if hero.get('age_at_story'):
+                    hero_parts.append(f"Age: {hero['age_at_story']}")
+                if hero.get('relationship_to_user'):
+                    hero_parts.append(f"Relationship: {hero['relationship_to_user']}")
+                if hero.get('physical_descriptors'):
+                    hero_parts.append(f"Physical: {hero['physical_descriptors']}")
+                if hero.get('personality_traits'):
+                    hero_parts.append(f"Personality: {hero['personality_traits']}")
+                if hero_parts:
+                    summary_parts.append(f"👤 Hero {idx}: {' | '.join(hero_parts)}")
+        
+        # Supporting Characters (Step 3)
+        supporting = story_data.get('supporting_characters', [])
+        if supporting:
+            for idx, char in enumerate(supporting, 1):
+                char_parts = []
+                if char.get('name'):
+                    char_parts.append(f"Name: {char['name']}")
+                if char.get('role'):
+                    char_parts.append(f"Role: {char['role']}")
+                if char.get('description'):
+                    char_parts.append(f"Description: {char['description']}")
+                if char_parts:
+                    summary_parts.append(f"👥 Supporting {idx}: {' | '.join(char_parts)}")
+        
+        # Setting & Time (Step 5)
         if story_data.get('story_location') and story_data.get('story_location') != 'Unknown':
             summary_parts.append(f"📍 Location: {story_data['story_location']}")
         
-        if story_data.get('story_world_type') and story_data.get('story_world_type') != 'Unknown':
-            summary_parts.append(f"🌍 World: {story_data['story_world_type']}")
+        if story_data.get('story_timeframe') and story_data.get('story_timeframe') != 'Unknown':
+            summary_parts.append(f"📅 Timeframe: {story_data['story_timeframe']}")
         
-        # Character
-        if story_data.get('subject_full_name') and story_data.get('subject_full_name') != 'Unknown':
-            summary_parts.append(f"👤 Character: {story_data['subject_full_name']}")
+        if story_data.get('season_time_of_year'):
+            summary_parts.append(f"🍂 Season/Time of Year: {story_data['season_time_of_year']}")
         
-        if story_data.get('subject_relationship_to_writer') and story_data.get('subject_relationship_to_writer') != 'Unknown':
-            summary_parts.append(f"💝 Relationship: {story_data['subject_relationship_to_writer']}")
+        if story_data.get('environmental_details'):
+            summary_parts.append(f"🌿 Environmental Details: {story_data['environmental_details']}")
         
-        # Story Craft
-        if story_data.get('problem_statement') and story_data.get('problem_statement') != 'Unknown':
-            summary_parts.append(f"🎯 Problem: {story_data['problem_statement']}")
+        # Story Type (Step 6)
+        if story_data.get('story_type'):
+            summary_parts.append(f"📚 Story Type: {story_data['story_type'].replace('_', ' ').title()}")
         
-        if story_data.get('actions_taken') and story_data.get('actions_taken') != 'Unknown':
-            summary_parts.append(f"⚡ Actions: {story_data['actions_taken']}")
+        # Audience & Perspective (Step 7)
+        audience = story_data.get('audience', {})
+        if isinstance(audience, dict):
+            if audience.get('who_will_see_first'):
+                summary_parts.append(f"👥 Audience: {audience['who_will_see_first']}")
+            if audience.get('desired_feeling'):
+                summary_parts.append(f"💭 Desired Feeling: {audience['desired_feeling']}")
         
-        if story_data.get('outcome') and story_data.get('outcome') != 'Unknown':
-            summary_parts.append(f"🏆 Outcome: {story_data['outcome']}")
-        
-        if story_data.get('likes_in_story') and story_data.get('likes_in_story') != 'Unknown':
-            summary_parts.append(f"❤️ Why This Story: {story_data['likes_in_story']}")
+        if story_data.get('perspective'):
+            summary_parts.append(f"🎬 Perspective: {story_data['perspective'].replace('_', ' ').title()}")
         
         return "\n".join(summary_parts) if summary_parts else "Story details captured successfully."
+    
+    def _build_dossier_html(self, story_data: Dict[str, Any]) -> str:
+        """Build HTML for simplified dossier matching client intake requirements"""
+        html_parts = []
+        
+        # Story Overview
+        html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>📖 Story Overview</h3>")
+        html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
+        if story_data.get('title'):
+            html_parts.append(f"<p><strong>Title:</strong> {story_data['title']}</p>")
+        if story_data.get('logline'):
+            html_parts.append(f"<p><strong>Logline:</strong> {story_data['logline']}</p>")
+        if story_data.get('genre'):
+            html_parts.append(f"<p><strong>Genre:</strong> {story_data['genre']}</p>")
+        if story_data.get('tone'):
+            html_parts.append(f"<p><strong>Tone:</strong> {story_data['tone']}</p>")
+        html_parts.append("</div>")
+        
+        # Hero Characters
+        heroes = story_data.get('heroes', [])
+        if heroes:
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>👤 Hero Characters</h3>")
+            for idx, hero in enumerate(heroes, 1):
+                html_parts.append(f"<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3b82f6;'>")
+                html_parts.append(f"<h4 style='margin-top: 0;'>Hero {idx}</h4>")
+                if hero.get('name'):
+                    html_parts.append(f"<p><strong>Name:</strong> {hero['name']}</p>")
+                if hero.get('age_at_story'):
+                    html_parts.append(f"<p><strong>Age:</strong> {hero['age_at_story']}</p>")
+                if hero.get('relationship_to_user'):
+                    html_parts.append(f"<p><strong>Relationship:</strong> {hero['relationship_to_user']}</p>")
+                if hero.get('physical_descriptors'):
+                    html_parts.append(f"<p><strong>Physical:</strong> {hero['physical_descriptors']}</p>")
+                if hero.get('personality_traits'):
+                    html_parts.append(f"<p><strong>Personality:</strong> {hero['personality_traits']}</p>")
+                html_parts.append("</div>")
+        
+        # Supporting Characters
+        supporting = story_data.get('supporting_characters', [])
+        if supporting:
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>👥 Supporting Characters</h3>")
+            for idx, char in enumerate(supporting, 1):
+                html_parts.append(f"<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #8b5cf6;'>")
+                html_parts.append(f"<h4 style='margin-top: 0;'>Supporting Character {idx}</h4>")
+                if char.get('name'):
+                    html_parts.append(f"<p><strong>Name:</strong> {char['name']}</p>")
+                if char.get('role'):
+                    html_parts.append(f"<p><strong>Role:</strong> {char['role']}</p>")
+                if char.get('description'):
+                    html_parts.append(f"<p><strong>Description:</strong> {char['description']}</p>")
+                html_parts.append("</div>")
+        
+        # Setting Details
+        setting_parts = []
+        if story_data.get('story_location') and story_data.get('story_location') != 'Unknown':
+            setting_parts.append(f"<p><strong>Location:</strong> {story_data['story_location']}</p>")
+        if story_data.get('story_timeframe') and story_data.get('story_timeframe') != 'Unknown':
+            setting_parts.append(f"<p><strong>Timeframe:</strong> {story_data['story_timeframe']}</p>")
+        if story_data.get('season_time_of_year'):
+            setting_parts.append(f"<p><strong>Season/Time of Year:</strong> {story_data['season_time_of_year']}</p>")
+        if story_data.get('environmental_details'):
+            setting_parts.append(f"<p><strong>Environmental Details:</strong> {story_data['environmental_details']}</p>")
+        
+        if setting_parts:
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>🌍 Setting Details</h3>")
+            html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
+            html_parts.extend(setting_parts)
+            html_parts.append("</div>")
+        
+        # Story Type & Perspective
+        story_type_parts = []
+        if story_data.get('story_type'):
+            story_type_parts.append(f"<p><strong>Story Type:</strong> {story_data['story_type'].replace('_', ' ').title()}</p>")
+        
+        audience = story_data.get('audience', {})
+        if isinstance(audience, dict):
+            if audience.get('who_will_see_first'):
+                story_type_parts.append(f"<p><strong>Audience:</strong> {audience['who_will_see_first']}</p>")
+            if audience.get('desired_feeling'):
+                story_type_parts.append(f"<p><strong>Desired Feeling:</strong> {audience['desired_feeling']}</p>")
+        
+        if story_data.get('perspective'):
+            story_type_parts.append(f"<p><strong>Perspective:</strong> {story_data['perspective'].replace('_', ' ').title()}</p>")
+        
+        if story_type_parts:
+            html_parts.append("<h3 style='color: #667eea; margin-top: 20px;'>🎬 Story Style & Perspective</h3>")
+            html_parts.append("<div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;'>")
+            html_parts.extend(story_type_parts)
+            html_parts.append("</div>")
+        
+        return "\n".join(html_parts) if html_parts else "<p>Story details captured successfully.</p>"
     
     def _build_email_html(
         self, 
@@ -289,9 +437,9 @@ class EmailService:
                         <strong>Story Title:</strong> {story_data.get('title', 'Untitled Story')}
                     </div>
                     
-                    <h2>📖 Your Story Summary</h2>
+                    <h2>📖 Your Story Dossier</h2>
                     <div class="story-summary">
-                        {story_summary.replace(chr(10), '<br>')}
+                        {self._build_dossier_html(story_data)}
                     </div>
                     
                     <h2>🎥 Generated Video Script</h2>
@@ -302,8 +450,9 @@ class EmailService:
                     
                     <div class="highlight">
                         <strong>Next Steps:</strong><br>
-                        • Review your story summary and script<br>
-                        • Contact us if you'd like any modifications<br>
+                        • Review your story dossier above<br>
+                        • Check if any information is missing or needs correction<br>
+                        • Reply to this email if you'd like any modifications<br>
                         • We'll be in touch about video production options
                     </div>
                     
