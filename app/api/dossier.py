@@ -124,6 +124,43 @@ async def update_dossier(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update dossier: {str(e)}")
 
+@router.patch("/dossiers/{project_id}/title")
+async def update_dossier_title(
+    project_id: UUID,
+    title_data: Dict[str, str],
+    user_id: UUID = Depends(get_user_id_only)
+):
+    """Update only the title of a dossier"""
+    try:
+        new_title = title_data.get("title", "").strip()
+        if not new_title or len(new_title) > 200:
+            raise HTTPException(status_code=400, detail="Invalid title (must be 1-200 characters)")
+        
+        # Get existing dossier
+        existing_dossier = session_service.get_dossier(project_id, user_id)
+        if not existing_dossier:
+            raise HTTPException(status_code=404, detail="Dossier not found")
+        
+        # Update only the title in snapshot_json
+        existing_snapshot = existing_dossier.snapshot_json or {}
+        existing_snapshot["title"] = new_title
+        
+        # Remove title options metadata if present
+        if "_title_options" in existing_snapshot:
+            del existing_snapshot["_title_options"]
+        
+        dossier_update = DossierUpdate(snapshot_json=existing_snapshot)
+        updated_dossier = session_service.update_dossier(project_id, user_id, dossier_update)
+        
+        if updated_dossier:
+            return {"success": True, "title": new_title, "dossier": updated_dossier}
+        raise HTTPException(status_code=500, detail="Failed to update title")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating dossier title: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update title: {str(e)}")
+
 @router.delete("/dossiers/{project_id}")
 async def delete_dossier(
     project_id: UUID,
