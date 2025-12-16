@@ -49,10 +49,32 @@ async def get_validation_queue(
         if limit and len(validations) > limit:
             validations = validations[:limit]
         
-        print(f"📊 [API] Returning {len(validations)} validations (status filter: {status or 'all'})")
+        # Fetch dossier data for each validation
+        from ..database.session_service_supabase import session_service
+        validations_with_dossier = []
+        for validation in validations:
+            dossier_data = None
+            try:
+                dossier = session_service.get_dossier(
+                    UUID(validation['project_id']),
+                    UUID(validation['user_id'])
+                )
+                if dossier:
+                    dossier_data = dossier.snapshot_json
+            except Exception as dossier_error:
+                print(f"⚠️ [VALIDATION] Could not fetch dossier data for project {validation.get('project_id')}: {dossier_error}")
+                dossier_data = None
+            
+            validation_with_dossier = {**validation}
+            if dossier_data:
+                validation_with_dossier['dossier_data'] = dossier_data
+            
+            validations_with_dossier.append(validation_with_dossier)
+        
+        print(f"📊 [API] Returning {len(validations_with_dossier)} validations with dossier data (status filter: {status or 'all'})")
         
         # Return list directly (frontend expects array)
-        return validations
+        return validations_with_dossier
         
     except Exception as e:
         print(f"❌ Error fetching validation queue: {e}")
