@@ -1,12 +1,18 @@
 """
 Email Service for Stories We Tell
 Handles email notifications when stories are captured
+Supports both Resend API and SMTP (Gmail) providers
 """
 
 import os
-import resend
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
+
+# Commented out Resend import - keeping for future use
+# import resend
 
 load_dotenv()
 
@@ -14,20 +20,156 @@ class EmailService:
     """Service for sending email notifications"""
     
     def __init__(self):
-        self.api_key = os.getenv("RESEND_API_KEY")
-        # For free Resend accounts, use Resend's sandbox domain
-        # Default: onboarding@resend.dev (Resend's free tier sandbox domain)
-        self.from_email = os.getenv("FROM_EMAIL", "onboarding@resend.dev")
+        # Email provider selection: 'resend' or 'smtp' (default: 'smtp')
+        self.provider = os.getenv("EMAIL_PROVIDER", "smtp").lower()
+        
+        # Resend configuration (commented out but kept for future use)
+        # self.resend_api_key = os.getenv("RESEND_API_KEY")
+        # self.resend_from_email = os.getenv("FROM_EMAIL", "onboarding@resend.dev")
+        
+        # SMTP configuration (Gmail)
+        self.smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+        self.smtp_port = int(os.getenv("SMTP_PORT", "465"))
+        self.smtp_user = os.getenv("SMTP_USER", "")
+        self.smtp_password = os.getenv("SMTP_PASSWORD", "")
+        self.smtp_from_email = os.getenv("SMTP_FROM_EMAIL", "")
+        self.smtp_from_name = os.getenv("SMTP_FROM_NAME", "Stories We Tell")
+        
         # CLIENT_EMAIL can be comma-separated for multiple internal team members
         self.client_email = os.getenv("CLIENT_EMAIL", "")
         
-        if self.api_key:
-            resend.api_key = self.api_key
-            self.available = True
-            print(f"✅ Email service initialized - FROM: {self.from_email}")
-        else:
+        # Determine availability based on provider
+        if self.provider == "smtp":
+            if self.smtp_user and self.smtp_password and self.smtp_from_email:
+                self.available = True
+                self.from_email = self.smtp_from_email
+                print(f"✅ Email service initialized (SMTP) - FROM: {self.smtp_from_name} <{self.smtp_from_email}>")
+                print(f"📧 SMTP Host: {self.smtp_host}:{self.smtp_port}")
+            else:
+                self.available = False
+                print("⚠️ SMTP credentials not found - email service disabled")
+                print("   Required: SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL")
+        else:  # resend
+            # Commented out Resend initialization - keeping for future use
+            # if self.resend_api_key:
+            #     resend.api_key = self.resend_api_key
+            #     self.available = True
+            #     self.from_email = self.resend_from_email
+            #     print(f"✅ Email service initialized (Resend) - FROM: {self.resend_from_email}")
+            # else:
             self.available = False
-            print("⚠️ RESEND_API_KEY not found - email service disabled")
+            print("⚠️ Resend is currently disabled. Using SMTP instead.")
+            print("   To use Resend, set EMAIL_PROVIDER=resend and RESEND_API_KEY")
+    
+    def _send_via_smtp(
+        self,
+        to_emails: List[str],
+        subject: str,
+        html_content: str,
+        cc_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send email via SMTP (Gmail)
+        
+        Args:
+            to_emails: List of recipient email addresses
+            subject: Email subject
+            html_content: HTML email content
+            cc_emails: Optional list of CC email addresses
+            
+        Returns:
+            bool: True if email sent successfully
+        """
+        try:
+            # Create message
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = f"{self.smtp_from_name} <{self.smtp_from_email}>"
+            msg['To'] = ', '.join(to_emails)
+            
+            if cc_emails:
+                msg['Cc'] = ', '.join(cc_emails)
+            
+            # Add HTML content
+            html_part = MIMEText(html_content, 'html')
+            msg.attach(html_part)
+            
+            # Connect to SMTP server
+            if self.smtp_port == 465:
+                # SSL connection
+                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port)
+            else:
+                # TLS connection
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port)
+                server.starttls()
+            
+            # Login and send
+            server.login(self.smtp_user, self.smtp_password)
+            
+            # Combine to and cc recipients
+            all_recipients = to_emails + (cc_emails if cc_emails else [])
+            server.send_message(msg, from_addr=self.smtp_from_email, to_addrs=all_recipients)
+            server.quit()
+            
+            print(f"✅ Email sent via SMTP to {', '.join(to_emails)}")
+            if cc_emails:
+                print(f"📧 CC: {', '.join(cc_emails)}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ SMTP email sending error: {str(e)}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
+            return False
+    
+    def _send_via_resend(
+        self,
+        to_emails: List[str],
+        subject: str,
+        html_content: str,
+        from_name: str = "Stories We Tell",
+        cc_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send email via Resend API (commented out but kept for future use)
+        
+        Args:
+            to_emails: List of recipient email addresses
+            subject: Email subject
+            html_content: HTML email content
+            from_name: Sender name
+            cc_emails: Optional list of CC email addresses
+            
+        Returns:
+            bool: True if email sent successfully
+        """
+        # Commented out Resend implementation - keeping for future use
+        # try:
+        #     email_data = {
+        #         "from": f"{from_name} <{self.resend_from_email}>",
+        #         "to": to_emails,
+        #         "subject": subject,
+        #         "html": html_content
+        #     }
+        #     
+        #     if cc_emails:
+        #         email_data["cc"] = cc_emails
+        #     
+        #     response = resend.Emails.send(email_data)
+        #     
+        #     if response and response.get('id'):
+        #         print(f"✅ Email sent via Resend to {', '.join(to_emails)} (ID: {response['id']})")
+        #         return True
+        #     else:
+        #         print(f"❌ Failed to send email via Resend")
+        #         return False
+        #         
+        # except Exception as e:
+        #     print(f"❌ Resend email sending error: {str(e)}")
+        #     return False
+        
+        print("⚠️ Resend is currently disabled. Please use SMTP provider.")
+        return False
     
     async def send_story_captured_email(
         self, 
@@ -87,27 +229,22 @@ class EmailService:
             
             final_user_email = user_email
             
-            # Send email
-            email_data = {
-                "from": self.from_email,
-                "to": [final_user_email],
-                "subject": subject,
-                "html": html_content
-            }
-            
-            # Only add CC if there are emails to CC
-            if cc_emails:
-                email_data["cc"] = cc_emails
-                print(f"📧 CC emails: {cc_emails}")
-            
-            response = resend.Emails.send(email_data)
-            
-            if response and response.get('id'):
-                print(f"✅ Email sent successfully to {final_user_email} (ID: {response['id']})")
-                return True
-            else:
-                print(f"❌ Failed to send email to {final_user_email}")
-                return False
+            # Send email via configured provider
+            if self.provider == "smtp":
+                return self._send_via_smtp(
+                    to_emails=[final_user_email],
+                    subject=subject,
+                    html_content=html_content,
+                    cc_emails=cc_emails
+                )
+            else:  # resend
+                return self._send_via_resend(
+                    to_emails=[final_user_email],
+                    subject=subject,
+                    html_content=html_content,
+                    from_name="Stories We Tell",
+                    cc_emails=cc_emails
+                )
                 
         except Exception as e:
             print(f"❌ Email sending error: {str(e)}")
@@ -202,20 +339,19 @@ class EmailService:
             """
             
             # Send validation email to all internal team members
-            email_params = {
-                'from': f"Stories We Tell Validation <{self.from_email}>",
-                'to': internal_emails,
-                'subject': subject,
-                'html': validation_html
-            }
-            
-            response = resend.Emails.send(email_params)
-            if response and response.get('id'):
-                print(f"✅ Validation request sent to {', '.join(internal_emails)} (ID: {response.get('id')})")
-                return True
-            else:
-                print(f"❌ Failed to send validation request - no response ID")
-                return False
+            if self.provider == "smtp":
+                return self._send_via_smtp(
+                    to_emails=internal_emails,
+                    subject=subject,
+                    html_content=validation_html
+                )
+            else:  # resend
+                return self._send_via_resend(
+                    to_emails=internal_emails,
+                    subject=subject,
+                    html_content=validation_html,
+                    from_name="Stories We Tell Validation"
+                )
             
         except Exception as e:
             print(f"❌ Failed to send validation request: {e}")
@@ -323,20 +459,19 @@ class EmailService:
             """
             
             # Send email to all admins
-            email_params = {
-                'from': f"Stories We Tell Review <{self.from_email}>",
-                'to': internal_emails,
-                'subject': subject,
-                'html': review_html
-            }
-            
-            response = resend.Emails.send(email_params)
-            if response and response.get('id'):
-                print(f"✅ Review notification sent to {', '.join(internal_emails)} (ID: {response.get('id')})")
-                return True
-            else:
-                print(f"❌ Failed to send review notification - no response ID")
-                return False
+            if self.provider == "smtp":
+                return self._send_via_smtp(
+                    to_emails=internal_emails,
+                    subject=subject,
+                    html_content=review_html
+                )
+            else:  # resend
+                return self._send_via_resend(
+                    to_emails=internal_emails,
+                    subject=subject,
+                    html_content=review_html,
+                    from_name="Stories We Tell Review"
+                )
                 
         except Exception as e:
             print(f"❌ Failed to send review notification: {e}")
