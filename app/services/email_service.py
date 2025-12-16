@@ -38,6 +38,9 @@ class EmailService:
         # CLIENT_EMAIL can be comma-separated for multiple internal team members
         self.client_email = os.getenv("CLIENT_EMAIL", "")
         
+        # Frontend URL for admin links
+        self.frontend_url = os.getenv("FRONTEND_URL", "https://stories-we-tell.vercel.app")
+        
         # Determine availability based on provider
         if self.provider == "smtp":
             if self.smtp_user and self.smtp_password and self.smtp_from_email:
@@ -312,8 +315,8 @@ class EmailService:
                         </ol>
                         
                         <div class="action-buttons">
-                            <a href="https://app.storiesweetell.com/admin/validate/{validation_id or project_id}?action=approve" class="approve-btn">✅ Approve & Send</a>
-                            <a href="https://app.storiesweetell.com/admin/validate/{validation_id or project_id}?action=edit" class="edit-btn">✏️ Edit Script</a>
+                            <a href="{self.frontend_url}/admin/validate/{validation_id or project_id}?action=approve" class="approve-btn">✅ Approve & Send</a>
+                            <a href="{self.frontend_url}/admin/validate/{validation_id or project_id}?action=edit" class="edit-btn">✏️ Edit Script</a>
                         </div>
                         
                         <h2>💬 Conversation Transcript</h2>
@@ -453,7 +456,7 @@ class EmailService:
                         {issues_html if issues_html else '<p>✅ No issues flagged.</p>'}
                         
                         <div class="action-buttons">
-                            <a href="https://app.storiesweetell.com/admin/validate/{validation_id}" class="review-btn">📋 View Full Review</a>
+                            <a href="{self.frontend_url}/admin/validate/{validation_id}" class="review-btn">📋 View Full Review</a>
                         </div>
                         
                         <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 20px;">
