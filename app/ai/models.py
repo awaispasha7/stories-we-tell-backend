@@ -217,6 +217,18 @@ class AIModelManager:
                     else:
                         print(f"⚠️ RAG context present but empty items")
             
+            # Check for active revision request and get revision prompt
+            revision_prompt = ""
+            project_id = kwargs.get("project_id")
+            if project_id:
+                try:
+                    from ..services.revision_prompt_library import get_active_revision_prompt
+                    revision_prompt = await get_active_revision_prompt(str(project_id))
+                    if revision_prompt:
+                        print(f"🔄 [REVISION] Active revision prompt found for project {project_id}")
+                except Exception as rev_e:
+                    print(f"⚠️ [REVISION] Error fetching revision prompt: {rev_e}")
+            
             # Check for dossier context (existing story data) - Updated for client requirements
             dossier_context = kwargs.get("dossier_context")
             dossier_info = ""
@@ -457,6 +469,8 @@ class AIModelManager:
 
         CONVERSATION CONTEXT:
         {self._build_conversation_context(kwargs.get("conversation_history", []), kwargs.get("image_context", ""))}
+
+        {revision_prompt}
 
         Be Ariel - warm, story-focused, and always building on what they share.{rag_context_text}{dossier_info}"""
 

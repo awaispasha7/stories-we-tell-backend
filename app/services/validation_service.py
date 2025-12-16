@@ -116,7 +116,10 @@ class ValidationService:
         status: str,
         reviewed_by: Optional[str] = None,
         review_notes: Optional[str] = None,
-        updated_script: Optional[str] = None
+        updated_script: Optional[str] = None,
+        review_checklist: Optional[Dict[str, Any]] = None,
+        review_issues: Optional[Dict[str, Any]] = None,
+        needs_revision: Optional[bool] = None
     ) -> bool:
         """Update validation request status and review information."""
         try:
@@ -134,6 +137,15 @@ class ValidationService:
                 
             if updated_script:
                 update_data['generated_script'] = updated_script
+            
+            if review_checklist is not None:
+                update_data['review_checklist'] = review_checklist
+            
+            if review_issues is not None:
+                update_data['review_issues'] = review_issues
+            
+            if needs_revision is not None:
+                update_data['needs_revision'] = needs_revision
             
             result = self.supabase.table('validation_queue').update(
                 update_data

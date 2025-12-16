@@ -417,6 +417,136 @@ async def update_validation_script(
         raise HTTPException(status_code=500, detail=f"Failed to update script: {str(e)}")
 
 
+@router.post("/validation/queue/{validation_id}/send-review")
+async def send_review(
+    validation_id: str,
+    request: Dict[str, Any] = Body(...),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+) -> Dict[str, Any]:
+    """
+    Send review with checklist and issues. This will:
+    1. Store review_checklist and review_issues
+    2. Set needs_revision=True if there are unchecked items or issues
+    3. Reopen chat by setting story_completed=False for all sessions in project
+    4. Send review email to all admins
+    """
+    try:
+        from datetime import datetime, timezone
+        
+        # Get validation to access project_id and session_id
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        project_id = validation.get('project_id')
+        session_id = validation.get('session_id')
+        user_id = validation.get('user_id')
+        
+        # Extract review data
+        review_checklist = request.get('checklist', {})
+        review_issues = request.get('issues', {})
+        review_notes = request.get('notes', '')
+        reviewed_by = x_user_id or request.get('reviewed_by', 'admin')
+        
+        # Determine if revision is needed (any unchecked items or flagged issues)
+        unchecked_items = [
+            key for key, checked in review_checklist.items() 
+            if isinstance(checked, bool) and not checked
+        ]
+        has_issues = any(
+            issues and len(issues) > 0 
+            for issues in review_issues.values() 
+            if isinstance(issues, list)
+        )
+        needs_revision = len(unchecked_items) > 0 or has_issues
+        
+        print(f"📋 [REVIEW] Sending review for validation {validation_id}")
+        print(f"📋 [REVIEW] Unchecked items: {unchecked_items}")
+        print(f"📋 [REVIEW] Has issues: {has_issues}")
+        print(f"📋 [REVIEW] Needs revision: {needs_revision}")
+        
+        # Update validation with review data
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='pending',  # Keep as pending during review
+            reviewed_by=reviewed_by,
+            review_notes=review_notes,
+            review_checklist=review_checklist,
+            review_issues=review_issues,
+            needs_revision=needs_revision
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update validation with review data")
+        
+        # If revision is needed, reopen the chat
+        if needs_revision and project_id:
+            try:
+                from ..database.supabase import get_supabase_client
+                supabase = get_supabase_client()
+                
+                # Reopen ALL sessions in the project by setting story_completed=False and is_active=True
+                reopen_result = supabase.table("sessions").update({
+                    "story_completed": False,
+                    "is_active": True,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }).eq("project_id", str(project_id)).execute()
+                
+                print(f"✅ [REVIEW] Reopened {len(reopen_result.data) if reopen_result.data else 0} sessions in project {project_id}")
+            except Exception as reopen_error:
+                print(f"⚠️ [REVIEW] Error reopening chat: {reopen_error}")
+                # Don't fail the whole request if reopening fails
+        
+        # Send review email to all admins
+        try:
+            from ..services.email_service import EmailService
+            email_service = EmailService()
+            
+            if email_service.available:
+                # Get dossier data for email
+                from ..database.session_service_supabase import session_service
+                dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                dossier_data = dossier.snapshot_json if dossier else {}
+                
+                # Get internal team emails
+                import os
+                internal_emails_str = os.getenv("CLIENT_EMAIL", "")
+                internal_emails = [email.strip() for email in internal_emails_str.split(",") if email.strip()]
+                
+                if internal_emails:
+                    # Send review notification email
+                    await email_service.send_review_notification(
+                        internal_emails=internal_emails,
+                        project_id=project_id,
+                        validation_id=validation_id,
+                        story_data=dossier_data,
+                        review_checklist=review_checklist,
+                        review_issues=review_issues,
+                        needs_revision=needs_revision
+                    )
+                    print(f"📧 [REVIEW] Review notification sent to {len(internal_emails)} admins")
+        except Exception as email_error:
+            print(f"⚠️ [REVIEW] Error sending review email: {email_error}")
+            # Don't fail the whole request if email fails
+        
+        return {
+            "success": True,
+            "message": "Review sent successfully",
+            "needs_revision": needs_revision,
+            "unchecked_items": unchecked_items
+        }
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid validation ID format")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [REVIEW] Error sending review: {e}")
+        import traceback
+        print(f"❌ [REVIEW] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to send review: {str(e)}")
+
+
 @router.get("/validation/stats")
 async def get_validation_stats() -> Dict[str, Any]:
     """Get validation queue statistics."""

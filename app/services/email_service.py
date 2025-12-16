@@ -221,6 +221,127 @@ class EmailService:
             print(f"❌ Failed to send validation request: {e}")
             return False
     
+    async def send_review_notification(
+        self,
+        internal_emails: List[str],
+        project_id: str,
+        validation_id: str,
+        story_data: Dict[str, Any],
+        review_checklist: Dict[str, Any],
+        review_issues: Dict[str, Any],
+        needs_revision: bool
+    ) -> bool:
+        """
+        Send review notification email to all admins with checklist status and issues.
+        
+        Args:
+            internal_emails: List of admin email addresses
+            project_id: Project ID
+            validation_id: Validation ID
+            story_data: Story dossier data
+            review_checklist: Review checklist with checked/unchecked items
+            review_issues: Flagged issues (missing_info, conflicts, factual_gaps)
+            needs_revision: Whether revision is needed
+        
+        Returns:
+            bool: True if email sent successfully
+        """
+        if not self.available:
+            print("⚠️ Email service not available - skipping review notification")
+            return False
+        
+        try:
+            subject = f"Story Review - {story_data.get('title', 'Untitled Story')} {'⚠️ Needs Revision' if needs_revision else '✅ Approved'}"
+            
+            # Build checklist status HTML
+            checklist_html = "<h3>📋 Review Checklist Status</h3><ul>"
+            for key, checked in review_checklist.items():
+                status_icon = "✅" if checked else "❌"
+                status_text = "Reviewed" if checked else "Needs Attention"
+                item_name = key.replace("_", " ").title()
+                checklist_html += f"<li>{status_icon} <strong>{item_name}:</strong> {status_text}</li>"
+            checklist_html += "</ul>"
+            
+            # Build issues HTML
+            issues_html = ""
+            if review_issues:
+                has_any_issues = any(
+                    issues and len(issues) > 0 
+                    for issues in review_issues.values() 
+                    if isinstance(issues, list)
+                )
+                if has_any_issues:
+                    issues_html = "<h3>⚠️ Flagged Issues</h3>"
+                    for issue_type, issues in review_issues.items():
+                        if issues and len(issues) > 0:
+                            issue_type_name = issue_type.replace("_", " ").title()
+                            issues_html += f"<h4>{issue_type_name}:</h4><ul>"
+                            for issue in issues[:5]:  # Limit to 5 issues
+                                issues_html += f"<li>{issue}</li>"
+                            issues_html += "</ul>"
+            
+            # Build review notification HTML
+            review_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: {'#fff3cd' if needs_revision else '#d4edda'}; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid {'#ffc107' if needs_revision else '#28a745'}; }}
+                    .content {{ padding: 20px; }}
+                    .action-buttons {{ text-align: center; margin: 30px 0; }}
+                    .review-btn {{ background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 0 10px; display: inline-block; }}
+                    ul {{ margin: 10px 0; padding-left: 20px; }}
+                    li {{ margin: 5px 0; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>{'⚠️ Story Review - Revision Needed' if needs_revision else '✅ Story Review - Approved'}</h1>
+                        <p><strong>Project ID:</strong> {project_id}</p>
+                        <p><strong>Story Title:</strong> {story_data.get('title', 'Untitled Story')}</p>
+                    </div>
+                    
+                    <div class="content">
+                        {checklist_html}
+                        {issues_html if issues_html else '<p>✅ No issues flagged.</p>'}
+                        
+                        <div class="action-buttons">
+                            <a href="https://app.storiesweetell.com/admin/validate/{validation_id}" class="review-btn">📋 View Full Review</a>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 20px;">
+                            <p><strong>Next Steps:</strong></p>
+                            {'<p>⚠️ This story needs revision. The chat has been reopened for the user to provide missing information.</p>' if needs_revision else '<p>✅ All checklist items reviewed. Story is ready for next steps.</p>'}
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Send email to all admins
+            email_params = {
+                'from': f"Stories We Tell Review <{self.from_email}>",
+                'to': internal_emails,
+                'subject': subject,
+                'html': review_html
+            }
+            
+            response = resend.Emails.send(email_params)
+            if response and response.get('id'):
+                print(f"✅ Review notification sent to {', '.join(internal_emails)} (ID: {response.get('id')})")
+                return True
+            else:
+                print(f"❌ Failed to send review notification - no response ID")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Failed to send review notification: {e}")
+            return False
+    
     def _build_story_summary(self, story_data: Dict[str, Any]) -> str:
         """Build a formatted story summary - Simplified to match client intake requirements only"""
         summary_parts = []
