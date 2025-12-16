@@ -367,11 +367,6 @@ class SimpleSessionManager:
             "user_id": str(authenticated_user_id)
         }).eq("user_id", anonymous_user_id).execute()
         
-        # Update all turns
-        supabase.table("turns").update({
-            "user_id": str(authenticated_user_id)
-        }).eq("user_id", anonymous_user_id).execute()
-        
         # Update dossier
         supabase.table("dossier").update({
             "user_id": str(authenticated_user_id)
@@ -409,9 +404,6 @@ class SimpleSessionManager:
             try:
                 # Anonymize chat messages (set user_id to NULL)
                 supabase.table("chat_messages").update({"user_id": None}).eq("user_id", user_id).execute()
-                
-                # Anonymize turns (set user_id to NULL)
-                supabase.table("turns").update({"user_id": None}).eq("user_id", user_id).execute()
                 
                 # Delete dossier
                 supabase.table("dossier").delete().eq("user_id", user_id).execute()

@@ -327,24 +327,19 @@ async def delete_project(
             supabase.table("chat_messages").delete().eq("session_id", session_id).execute()
         print(f"🗑️ Deleted chat messages for {len(session_ids)} sessions")
         
-        # 6. Delete turns for all sessions (references session_id)
-        for session_id in session_ids:
-            supabase.table("turns").delete().eq("session_id", session_id).execute()
-        print(f"🗑️ Deleted turns for {len(session_ids)} sessions")
-        
-        # 7. Delete sessions (references project_id)
+        # 6. Delete sessions (references project_id)
         supabase.table("sessions").delete().eq("project_id", project_id_str).execute()
         print(f"🗑️ Deleted {len(session_ids)} sessions for project: {project_id}")
         
-        # 8. Delete assets (references project_id)
+        # 7. Delete assets (references project_id)
         supabase.table("assets").delete().eq("project_id", project_id_str).execute()
         print(f"🗑️ Deleted assets for project: {project_id}")
         
-        # 9. Delete user_projects junction table entry (references project_id)
+        # 8. Delete user_projects junction table entry (references project_id)
         supabase.table("user_projects").delete().eq("project_id", project_id_str).eq("user_id", str(user_id)).execute()
         print(f"🗑️ Deleted user_projects entry for project: {project_id}")
         
-        # 10. Finally, delete the dossier (project) itself
+        # 9. Finally, delete the dossier (project) itself
         supabase.table("dossier").delete().eq("project_id", project_id_str).eq("user_id", str(user_id)).execute()
         print(f"✅ Deleted project: {project_id} for user: {user_id}")
         

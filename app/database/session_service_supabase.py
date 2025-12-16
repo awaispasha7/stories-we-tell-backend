@@ -416,7 +416,7 @@ class SessionService:
         message_record = {
             "message_id": str(message_id),
             "session_id": str(message_data.session_id),
-            "turn_id": str(message_data.turn_id) if message_data.turn_id else None,
+            "turn_id": None,  # Legacy field, not used
             "role": message_data.role,
             "content": message_data.content,
             "metadata": message_data.metadata
