@@ -520,9 +520,14 @@ async def send_review(
                 # Don't fail the whole request if reopening fails
         
         # Send review email to all admins
+        email_sent = False
+        email_error = None
         try:
             from ..services.email_service import EmailService
             email_service = EmailService()
+            
+            print(f"📧 [REVIEW] Email service available: {email_service.available}")
+            print(f"📧 [REVIEW] Email provider: {email_service.provider}")
             
             if email_service.available:
                 # Get dossier data for email
@@ -535,9 +540,11 @@ async def send_review(
                 internal_emails_str = os.getenv("CLIENT_EMAIL", "")
                 internal_emails = [email.strip() for email in internal_emails_str.split(",") if email.strip()]
                 
+                print(f"📧 [REVIEW] Internal emails configured: {len(internal_emails)} recipients")
+                
                 if internal_emails:
                     # Send review notification email
-                    await email_service.send_review_notification(
+                    email_sent = await email_service.send_review_notification(
                         internal_emails=internal_emails,
                         project_id=project_id,
                         validation_id=validation_id,
@@ -546,16 +553,26 @@ async def send_review(
                         review_issues=review_issues,
                         needs_revision=needs_revision
                     )
-                    print(f"📧 [REVIEW] Review notification sent to {len(internal_emails)} admins")
-        except Exception as email_error:
-            print(f"⚠️ [REVIEW] Error sending review email: {email_error}")
+                    if email_sent:
+                        print(f"✅ [REVIEW] Review notification email sent successfully to {len(internal_emails)} admins")
+                    else:
+                        print(f"⚠️ [REVIEW] Review notification email failed to send")
+                else:
+                    print(f"⚠️ [REVIEW] No internal emails configured (CLIENT_EMAIL env var is empty)")
+        except Exception as e:
+            email_error = str(e)
+            print(f"❌ [REVIEW] Error sending review email: {email_error}")
+            import traceback
+            print(f"❌ [REVIEW] Traceback: {traceback.format_exc()}")
             # Don't fail the whole request if email fails
         
         return {
             "success": True,
             "message": "Review sent successfully",
             "needs_revision": needs_revision,
-            "unchecked_items": unchecked_items
+            "unchecked_items": unchecked_items,
+            "email_sent": email_sent,
+            "email_error": email_error
         }
         
     except ValueError:

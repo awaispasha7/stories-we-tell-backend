@@ -382,8 +382,16 @@ class EmailService:
         Returns:
             bool: True if email sent successfully
         """
+        print(f"📧 [EMAIL] Starting review notification email send...")
+        print(f"📧 [EMAIL] Provider: {self.provider}")
+        print(f"📧 [EMAIL] Recipients: {internal_emails}")
+        print(f"📧 [EMAIL] Project ID: {project_id}")
+        print(f"📧 [EMAIL] Validation ID: {validation_id}")
+        print(f"📧 [EMAIL] Needs Revision: {needs_revision}")
+        
         if not self.available:
-            print("⚠️ Email service not available - skipping review notification")
+            print("⚠️ [EMAIL] Email service not available - skipping review notification")
+            print("⚠️ [EMAIL] Check email provider configuration (SMTP_USER, SMTP_PASSWORD, etc.)")
             return False
         
         try:
@@ -460,11 +468,17 @@ class EmailService:
             
             # Send email to all admins
             if self.provider == "smtp":
-                return self._send_via_smtp(
+                print(f"📧 [EMAIL] Sending via SMTP to {len(internal_emails)} recipients...")
+                result = self._send_via_smtp(
                     to_emails=internal_emails,
                     subject=subject,
                     html_content=review_html
                 )
+                if result:
+                    print(f"✅ [EMAIL] Review notification email sent successfully to {', '.join(internal_emails)}")
+                else:
+                    print(f"❌ [EMAIL] Failed to send review notification email")
+                return result
             else:  # resend
                 return self._send_via_resend(
                     to_emails=internal_emails,
@@ -474,6 +488,9 @@ class EmailService:
                 )
                 
         except Exception as e:
+            print(f"❌ [EMAIL] Failed to send review notification: {e}")
+            import traceback
+            print(f"❌ [EMAIL] Traceback: {traceback.format_exc()}")
             print(f"❌ Failed to send review notification: {e}")
             return False
     
