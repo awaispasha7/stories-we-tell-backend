@@ -215,6 +215,70 @@ def get_all_prompt_titles() -> Dict[str, str]:
     return titles
 
 
+def get_user_friendly_question(
+    unchecked_items: List[str],
+    flagged_issues: Optional[Dict[str, List[str]]] = None
+) -> str:
+    """
+    Generate a user-friendly question from revision prompts that can be shown directly to the user.
+    This extracts the actual question part from the prompts.
+    
+    Args:
+        unchecked_items: List of checklist keys that are unchecked
+        flagged_issues: Optional dict of flagged issues
+    
+    Returns:
+        User-friendly question string to display immediately when chat is reopened
+    """
+    if not unchecked_items and not flagged_issues:
+        return "I need to gather some additional information to complete your story. Let's continue!"
+    
+    question_parts = []
+    
+    # Check for combination prompts first
+    if "photos" in unchecked_items and "setting" in unchecked_items:
+        question_parts.append("I need a couple of things to help complete your story. First, do you have photos of your characters that you can share? Photos help us create accurate visual representations. Also, can you tell me more about where and when this story takes place? What's the specific location, time period, and season?")
+        unchecked_items = [item for item in unchecked_items if item not in ["photos", "setting"]]
+    elif "photos" in unchecked_items:
+        question_parts.append("Do you have photos of your characters that you can share? Photos help us create accurate visual representations of the characters in the video. You can upload them now, or we can send you a link to upload them later.")
+        unchecked_items = [item for item in unchecked_items if item != "photos"]
+    elif "setting" in unchecked_items:
+        question_parts.append("Can you tell me more about where and when this story takes place? What's the specific location, time period, and season?")
+        unchecked_items = [item for item in unchecked_items if item != "setting"]
+    
+    # Add individual prompts for remaining unchecked items
+    for item in unchecked_items:
+        if item == "character_logic":
+            question_parts.append("I want to make sure I have all the character details correct. Can you help me clarify the character names, relationships, ages, and any other important character information?")
+        elif item == "timeline":
+            question_parts.append("I want to make sure I understand the timeline correctly. Can you help clarify when this story takes place? Is it a specific year, time period, or present day?")
+        elif item == "tone":
+            question_parts.append("To make sure we capture the right tone for your story, can you help me understand the style you're looking for? The tone affects how we tell your story visually.")
+        elif item == "perspective":
+            question_parts.append("I'd like to understand who this story is for. Who will see this story first? And when they watch it, what do you want them to feel? Also, what perspective would work best - first person, narrator voice, or another style?")
+    
+    # Add issue-specific questions
+    if flagged_issues:
+        for issue_type, issue_list in flagged_issues.items():
+            if issue_list and len(issue_list) > 0:
+                if issue_type == "missing_info":
+                    specific_issues = ", ".join(issue_list[:3])
+                    question_parts.append(f"I need some additional information: {specific_issues}. Can you help me fill in these details?")
+                elif issue_type == "conflicts":
+                    question_parts.append("I noticed some conflicting details in the story. Can you help me clarify these inconsistencies?")
+                elif issue_type == "factual_gaps":
+                    question_parts.append("There are some gaps in the factual details of the story. Can you help me fill in these gaps?")
+    
+    if not question_parts:
+        return "I need to gather some additional information to complete your story. Let's continue!"
+    
+    # Combine questions naturally
+    if len(question_parts) == 1:
+        return question_parts[0]
+    else:
+        return "I need to gather a few more details to complete your story:\n\n" + "\n\n".join(f"{i+1}. {q}" for i, q in enumerate(question_parts))
+
+
 async def get_active_revision_prompt(project_id: str) -> str:
     """
     Get the active revision prompt for a project by checking for active revision requests.

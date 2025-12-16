@@ -8,6 +8,8 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 
@@ -69,7 +71,8 @@ class EmailService:
         to_emails: List[str],
         subject: str,
         html_content: str,
-        cc_emails: Optional[List[str]] = None
+        cc_emails: Optional[List[str]] = None,
+        attachment_path: Optional[str] = None
     ) -> bool:
         """
         Send email via SMTP (Gmail)
@@ -96,6 +99,23 @@ class EmailService:
             # Add HTML content
             html_part = MIMEText(html_content, 'html')
             msg.attach(html_part)
+            
+            # Add attachment if provided
+            if attachment_path and os.path.exists(attachment_path):
+                try:
+                    with open(attachment_path, "rb") as attachment:
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(attachment.read())
+                        encoders.encode_base64(part)
+                        part.add_header(
+                            'Content-Disposition',
+                            f'attachment; filename= {os.path.basename(attachment_path)}'
+                        )
+                        msg.attach(part)
+                        print(f"📎 [EMAIL] Attached file: {os.path.basename(attachment_path)}")
+                except Exception as attach_error:
+                    print(f"⚠️ [EMAIL] Error attaching file: {attach_error}")
+                    # Continue without attachment if attachment fails
             
             # Connect to SMTP server
             if self.smtp_port == 465:
@@ -469,18 +489,43 @@ class EmailService:
             </html>
             """
             
+            # Generate Excel file from dossier data
+            excel_path = None
+            try:
+                from ..services.excel_generator import generate_dossier_excel
+                excel_path = generate_dossier_excel(story_data, project_id)
+                if excel_path:
+                    print(f"✅ [EMAIL] Excel file generated: {excel_path}")
+                else:
+                    print(f"⚠️ [EMAIL] Excel file generation failed, continuing without attachment")
+            except Exception as excel_error:
+                print(f"⚠️ [EMAIL] Error generating Excel file: {excel_error}")
+                import traceback
+                print(f"⚠️ [EMAIL] Traceback: {traceback.format_exc()}")
+                # Continue without Excel attachment if generation fails
+            
             # Send email to all admins
             if self.provider == "smtp":
                 print(f"📧 [EMAIL] Sending via SMTP to {len(internal_emails)} recipients...")
                 result = self._send_via_smtp(
                     to_emails=internal_emails,
                     subject=subject,
-                    html_content=review_html
+                    html_content=review_html,
+                    attachment_path=excel_path
                 )
                 if result:
                     print(f"✅ [EMAIL] Review notification email sent successfully to {', '.join(internal_emails)}")
                 else:
                     print(f"❌ [EMAIL] Failed to send review notification email")
+                
+                # Clean up Excel file after sending
+                if excel_path and os.path.exists(excel_path):
+                    try:
+                        os.remove(excel_path)
+                        print(f"🗑️ [EMAIL] Cleaned up temporary Excel file: {excel_path}")
+                    except Exception as cleanup_error:
+                        print(f"⚠️ [EMAIL] Error cleaning up Excel file: {cleanup_error}")
+                
                 return result
             else:  # resend
                 return self._send_via_resend(

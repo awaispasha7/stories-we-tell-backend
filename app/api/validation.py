@@ -501,10 +501,11 @@ async def send_review(
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update validation with review data")
         
-        # If revision is needed, reopen the chat
+        # If revision is needed, reopen the chat and auto-ask questions
         if needs_revision and project_id:
             try:
                 from ..database.supabase import get_supabase_client
+                from ..services.revision_prompt_library import get_user_friendly_question
                 supabase = get_supabase_client()
                 
                 # Reopen ALL sessions in the project by setting story_completed=False and is_active=True
@@ -515,8 +516,61 @@ async def send_review(
                 }).eq("project_id", str(project_id)).execute()
                 
                 print(f"✅ [REVIEW] Reopened {len(reopen_result.data) if reopen_result.data else 0} sessions in project {project_id}")
+                
+                # Get all reopened sessions to add auto-question
+                reopened_sessions = reopen_result.data if reopen_result.data else []
+                
+                # Generate user-friendly question from revision data
+                unchecked_items = [
+                    key for key, checked in review_checklist.items() 
+                    if isinstance(checked, bool) and not checked
+                ]
+                flagged_issues = {}
+                if review_issues:
+                    for issue_type in ["missing_info", "conflicts", "factual_gaps"]:
+                        issues = review_issues.get(issue_type, [])
+                        if issues and len(issues) > 0:
+                            flagged_issues[issue_type] = issues
+                
+                auto_question = get_user_friendly_question(unchecked_items, flagged_issues if flagged_issues else None)
+                
+                # Add auto-question as assistant message to the most recent active session
+                if reopened_sessions and auto_question:
+                    # Get the most recent session (or first one if we can't determine)
+                    latest_session = reopened_sessions[0]
+                    session_id = latest_session.get("session_id")
+                    session_user_id = latest_session.get("user_id")
+                    
+                    if session_id and session_user_id:
+                        try:
+                            # Create assistant message with the auto-question
+                            from uuid import uuid4
+                            message_id = str(uuid4())
+                            message_data = {
+                                "message_id": message_id,
+                                "session_id": session_id,
+                                "role": "assistant",
+                                "content": auto_question,
+                                "metadata": {
+                                    "auto_generated": True,
+                                    "revision_question": True,
+                                    "revision_items": unchecked_items
+                                },
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                                "updated_at": datetime.now(timezone.utc).isoformat(),
+                                "user_id": session_user_id
+                            }
+                            
+                            supabase.table("chat_messages").insert(message_data).execute()
+                            print(f"✅ [REVIEW] Auto-generated revision question in session {session_id}")
+                        except Exception as msg_error:
+                            print(f"⚠️ [REVIEW] Error creating auto-question message: {msg_error}")
+                            # Don't fail if message creation fails
+                
             except Exception as reopen_error:
                 print(f"⚠️ [REVIEW] Error reopening chat: {reopen_error}")
+                import traceback
+                print(f"⚠️ [REVIEW] Traceback: {traceback.format_exc()}")
                 # Don't fail the whole request if reopening fails
         
         # Send review email to all admins
