@@ -101,15 +101,35 @@ async def get_validation_request(validation_id: str) -> Dict[str, Any]:
 
 @router.get("/validation/queue/{validation_id}")
 async def get_validation_request_by_queue(validation_id: str) -> Dict[str, Any]:
-    """Get a specific validation request by ID (frontend route)."""
+    """Get a specific validation request by ID (frontend route) with dossier data."""
     try:
         validation = await validation_service.get_validation_by_id(UUID(validation_id))
         
         if not validation:
             raise HTTPException(status_code=404, detail="Validation request not found")
         
+        # Fetch dossier data for review
+        dossier_data = None
+        try:
+            from ..database.session_service_supabase import session_service
+            dossier = session_service.get_dossier(
+                UUID(validation['project_id']),
+                UUID(validation['user_id'])
+            )
+            if dossier:
+                dossier_data = dossier.snapshot_json
+                print(f"📋 [VALIDATION] Fetched dossier data for project {validation['project_id']}")
+        except Exception as dossier_error:
+            print(f"⚠️ [VALIDATION] Could not fetch dossier data: {dossier_error}")
+            dossier_data = None
+        
+        # Add dossier data to validation response
+        validation_with_dossier = {**validation}
+        if dossier_data:
+            validation_with_dossier['dossier_data'] = dossier_data
+        
         # Return directly as ValidationRequest (frontend expects this format)
-        return validation
+        return validation_with_dossier
         
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid validation ID format")
