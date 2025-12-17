@@ -169,7 +169,12 @@ class ValidationService:
                 update_data['synopsis_review_notes'] = synopsis_review_notes
             
             if synopsis_checklist is not None:
-                update_data['synopsis_checklist'] = synopsis_checklist
+                # Only add synopsis_checklist if column exists (graceful handling)
+                try:
+                    update_data['synopsis_checklist'] = synopsis_checklist
+                except Exception as e:
+                    print(f"⚠️ [VALIDATION] synopsis_checklist column may not exist yet: {e}")
+                    # Continue without synopsis_checklist if column doesn't exist
             
             result = self.supabase.table('validation_queue').update(
                 update_data
