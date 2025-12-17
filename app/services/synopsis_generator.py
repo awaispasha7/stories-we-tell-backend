@@ -35,12 +35,15 @@ class SynopsisGenerator:
             synopsis_prompt = self._build_synopsis_prompt(dossier_data)
             
             # Use DESCRIPTION task type (Gemini 2.5 Pro) for creative narrative generation
+            # Pass max_tokens to ensure we get 500-800 words (approximately 2000-3200 tokens)
             print(f"📝 [SYNOPSIS] Calling AI model for synopsis generation...")
             response_dict = await self.ai_manager.generate_response(
                 TaskType.DESCRIPTION,
                 synopsis_prompt,
                 conversation_history=[],
-                project_id=project_id
+                project_id=project_id,
+                max_tokens=3200,  # Enough for 800 words (approximately 4 tokens per word)
+                temperature=0.7  # Balanced creativity
             )
             
             if not response_dict or "response" not in response_dict:
@@ -53,12 +56,25 @@ class SynopsisGenerator:
             word_count = len(synopsis.split())
             
             print(f"✅ [SYNOPSIS] Generated synopsis: {word_count} words")
+            print(f"📝 [SYNOPSIS] First 200 chars: {synopsis[:200]}...")
+            print(f"📝 [SYNOPSIS] Last 200 chars: ...{synopsis[-200:]}")
             
             # Validate word count (should be 500-800 words)
             if word_count < 400:
-                print(f"⚠️ [SYNOPSIS] Synopsis is shorter than expected ({word_count} words)")
+                print(f"⚠️ [SYNOPSIS] WARNING: Synopsis is much shorter than expected ({word_count} words)")
+                print(f"⚠️ [SYNOPSIS] This might indicate the response was truncated")
+                # Check if response ends mid-sentence (common truncation indicator)
+                if synopsis and not synopsis.rstrip().endswith(('.', '!', '?', '"', "'")):
+                    print(f"⚠️ [SYNOPSIS] Response appears to be cut off (doesn't end with punctuation)")
             elif word_count > 1000:
                 print(f"⚠️ [SYNOPSIS] Synopsis is longer than expected ({word_count} words)")
+            
+            # Ensure synopsis is complete (ends with proper punctuation)
+            if synopsis and word_count < 400:
+                # If too short, try to detect if it was truncated
+                last_char = synopsis.rstrip()[-1] if synopsis.rstrip() else ''
+                if last_char not in ['.', '!', '?', '"', "'"]:
+                    print(f"⚠️ [SYNOPSIS] Response may be incomplete - ends with: '{last_char}'")
             
             return synopsis
             
@@ -150,16 +166,18 @@ Audience: {who_will_see}
 Desired Feeling: {desired_feeling}
 
 REQUIREMENTS:
-1. Write a 500-800 word synopsis that tells the story in narrative form
-2. Include the emotional arc - how the story progresses emotionally
+1. CRITICAL: Write EXACTLY 500-800 words. Do not stop short. The synopsis must be complete and comprehensive.
+2. Include the emotional arc - how the story progresses emotionally from beginning to end
 3. Include brief character notes - who they are and their role in the story
 4. Include brief setting notes - where and when the story takes place
-5. Imply the story structure - beginning, middle, end, key moments
+5. Imply the story structure - beginning, middle, end, key moments, turning points
 6. Make it pure narrative - no technical details, no shot descriptions, no camera language
 7. Write in a cinematic, engaging style that captures the essence of the story
 8. The synopsis should feel like reading a story, not a technical document
+9. Cover the entire story from start to finish - do not truncate or summarize too briefly
+10. Be detailed and vivid - paint a picture with words
 
-Write the synopsis now:"""
+IMPORTANT: Your response must be between 500-800 words. Write the complete synopsis now, ensuring you reach at least 500 words:"""
         
         return prompt
 

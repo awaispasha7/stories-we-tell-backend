@@ -809,5 +809,210 @@ class EmailService:
         </html>
         """
 
+    async def send_synopsis_approval(
+        self,
+        client_email: str,
+        client_name: Optional[str],
+        project_id: str,
+        validation_id: str,
+        synopsis: str,
+        dossier_data: Dict[str, Any],
+        checklist: Dict[str, Any],
+        review_notes: Optional[str] = None
+    ) -> bool:
+        """
+        Send synopsis approval email to client with the synopsis document.
+        
+        Args:
+            client_email: Client email address
+            client_name: Client name (optional)
+            project_id: Project ID
+            validation_id: Validation ID
+            synopsis: The approved synopsis text
+            dossier_data: Story dossier data for context
+            checklist: Synopsis review checklist
+            review_notes: Review notes (optional)
+        
+        Returns:
+            bool: True if email sent successfully
+        """
+        print(f"📧 [EMAIL] Starting synopsis approval email send...")
+        print(f"📧 [EMAIL] Provider: {self.provider}")
+        print(f"📧 [EMAIL] To: {client_email}")
+        print(f"📧 [EMAIL] Project ID: {project_id}")
+        print(f"📧 [EMAIL] Validation ID: {validation_id}")
+        
+        try:
+            client_display_name = client_name or "Valued Client"
+            story_title = dossier_data.get('title', 'Your Story')
+            
+            # Build checklist status
+            checklist_mapping = {
+                'emotional_tone': 'Emotional Tone',
+                'accuracy': 'Accuracy vs Intake',
+                'clarity': 'Clarity',
+                'perspective': 'Perspective',
+                'pacing': 'Pacing',
+                'sensitivity': 'Sensitivity'
+            }
+            checklist_status = []
+            for key, label in checklist_mapping.items():
+                checked = checklist.get(key, False)
+                status = "✅" if checked else "⏳"
+                checklist_status.append(f"{status} {label}")
+            
+            # Build email HTML
+            synopsis_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Synopsis Approved - {story_title}</title>
+                <style>
+                    body {{
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #f5f5f5;
+                    }}
+                    .container {{
+                        background-color: #ffffff;
+                        border-radius: 8px;
+                        padding: 30px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    }}
+                    .header {{
+                        text-align: center;
+                        border-bottom: 3px solid #4F46E5;
+                        padding-bottom: 20px;
+                        margin-bottom: 30px;
+                    }}
+                    .header h1 {{
+                        color: #4F46E5;
+                        margin: 0;
+                        font-size: 24px;
+                    }}
+                    .content {{
+                        margin-bottom: 30px;
+                    }}
+                    .synopsis-box {{
+                        background-color: #f9fafb;
+                        border-left: 4px solid #4F46E5;
+                        padding: 20px;
+                        margin: 20px 0;
+                        border-radius: 4px;
+                    }}
+                    .synopsis-text {{
+                        white-space: pre-wrap;
+                        line-height: 1.8;
+                        color: #1f2937;
+                    }}
+                    .checklist {{
+                        background-color: #f0f9ff;
+                        border: 1px solid #bae6fd;
+                        border-radius: 6px;
+                        padding: 15px;
+                        margin: 20px 0;
+                    }}
+                    .checklist h3 {{
+                        margin-top: 0;
+                        color: #0369a1;
+                    }}
+                    .checklist-item {{
+                        padding: 8px 0;
+                        border-bottom: 1px solid #e0f2fe;
+                    }}
+                    .checklist-item:last-child {{
+                        border-bottom: none;
+                    }}
+                    .footer {{
+                        text-align: center;
+                        padding-top: 20px;
+                        border-top: 1px solid #e5e7eb;
+                        color: #6b7280;
+                        font-size: 14px;
+                    }}
+                    .button {{
+                        display: inline-block;
+                        padding: 12px 24px;
+                        background-color: #4F46E5;
+                        color: #ffffff;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        margin: 20px 0;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>✅ Synopsis Approved</h1>
+                    </div>
+                    
+                    <div class="content">
+                        <p>Dear {client_display_name},</p>
+                        
+                        <p>We're excited to share that your story synopsis for <strong>"{story_title}"</strong> has been reviewed and approved!</p>
+                        
+                        <div class="synopsis-box">
+                            <h3 style="margin-top: 0; color: #4F46E5;">Your Story Synopsis</h3>
+                            <div class="synopsis-text">{synopsis}</div>
+                        </div>
+                        
+                        <div class="checklist">
+                            <h3>Review Checklist</h3>
+                            {''.join([f'<div class="checklist-item">{item}</div>' for item in checklist_status])}
+                        </div>
+                        
+                        {f'<p><strong>Review Notes:</strong> {review_notes}</p>' if review_notes else ''}
+                        
+                        <p>Your story is now moving to the script generation phase. We'll keep you updated on the progress.</p>
+                        
+                        <p>If you have any questions or would like to request changes, please don't hesitate to reach out.</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Best regards,<br>
+                        The Stories We Tell Team</p>
+                        <p>© 2025 Stories We Tell. All rights reserved.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            subject = f"Synopsis Approved: {story_title}"
+            
+            # Send email
+            if self.provider == "smtp":
+                print(f"📧 [EMAIL] Sending via SMTP to {client_email}...")
+                result = self._send_via_smtp(
+                    to_emails=[client_email],
+                    subject=subject,
+                    html_content=synopsis_html
+                )
+                if result:
+                    print(f"✅ [EMAIL] Synopsis approval email sent successfully to {client_email}")
+                else:
+                    print(f"❌ [EMAIL] Failed to send synopsis approval email")
+                return result
+            else:  # resend
+                return self._send_via_resend(
+                    to_emails=[client_email],
+                    subject=subject,
+                    html_content=synopsis_html,
+                    from_name="Stories We Tell"
+                )
+                
+        except Exception as e:
+            print(f"❌ [EMAIL] Failed to send synopsis approval email: {e}")
+            import traceback
+            print(f"❌ [EMAIL] Traceback: {traceback.format_exc()}")
+            return False
+
 # Global instance
 email_service = EmailService()

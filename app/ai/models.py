@@ -580,20 +580,57 @@ class AIModelManager:
     async def _generate_description_response(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """Generate description using Gemini 2.5 Pro (latest for creative reasoning) with fallback to 1.5 Pro"""
         try:
+            # Check if this is a synopsis generation (prompt contains "synopsis" or "500-800 words")
+            is_synopsis = "synopsis" in prompt.lower() or "500-800 words" in prompt.lower()
+            
+            # For synopsis, use the prompt directly without wrapping
+            # For other descriptions, wrap it
+            if is_synopsis:
+                final_prompt = prompt
+                max_tokens = kwargs.get("max_tokens", 3200)  # Higher for synopsis
+                temperature = kwargs.get("temperature", 0.7)  # Use provided temperature
+            else:
+                final_prompt = f"Generate a detailed, vivid description for: {prompt}"
+                max_tokens = kwargs.get("max_tokens", 2000)
+                temperature = kwargs.get("temperature", 0.8)
+            
             if self.gemini_available:
                 # Try Gemini 2.5 Pro first (latest for creative reasoning)
                 try:
                     model = genai.GenerativeModel('gemini-2.5-pro')
+                    print(f"📝 [AI] Generating with Gemini 2.5 Pro, max_output_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
                     response = model.generate_content(
-                        f"Generate a detailed, vivid description for: {prompt}",
+                        final_prompt,
                         generation_config=genai.types.GenerationConfig(
-                            max_output_tokens=kwargs.get("max_tokens", 2000),  # Increased for 2.5 Pro
-                            temperature=kwargs.get("temperature", 0.8)  # Higher creativity for descriptions
-                        )
+                            max_output_tokens=max_tokens,
+                            temperature=temperature,
+                            stop_sequences=[]  # Don't stop early
+                        ),
+                        safety_settings=[
+                            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                        ]
                     )
+                    
+                    # Get full response text - handle both single and multi-part responses
+                    if hasattr(response, 'candidates') and response.candidates:
+                        # Get text from all parts of the first candidate
+                        response_text = ""
+                        for part in response.candidates[0].content.parts:
+                            if hasattr(part, 'text'):
+                                response_text += part.text
+                    else:
+                        response_text = response.text
+                    
+                    word_count = len(response_text.split())
+                    print(f"📝 [AI] Gemini 2.5 Pro response: {word_count} words, tokens: {response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 'unknown'}")
+                    if word_count < 400 and is_synopsis:
+                        print(f"⚠️ [AI] WARNING: Synopsis response is too short! May be truncated.")
 
                     return {
-                        "response": response.text,
+                        "response": response_text,
                         "model_used": "gemini-2.5-pro",
                         "tokens_used": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
                     }
@@ -601,38 +638,75 @@ class AIModelManager:
                     print(f"⚠️ Gemini 2.5 Pro failed, falling back to 1.5 Pro: {e}")
                     # Fallback to Gemini 1.5 Pro (stable, GA)
                     model = genai.GenerativeModel('gemini-1.5-pro')
+                    print(f"📝 [AI] Generating with Gemini 1.5 Pro, max_output_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
                     response = model.generate_content(
-                        f"Generate a detailed, vivid description for: {prompt}",
+                        final_prompt,
                         generation_config=genai.types.GenerationConfig(
-                            max_output_tokens=kwargs.get("max_tokens", 1500),
-                            temperature=kwargs.get("temperature", 0.8)
-                        )
+                            max_output_tokens=max_tokens,
+                            temperature=temperature,
+                            stop_sequences=[]  # Don't stop early
+                        ),
+                        safety_settings=[
+                            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                        ]
                     )
+                    
+                    # Get full response text - handle both single and multi-part responses
+                    if hasattr(response, 'candidates') and response.candidates:
+                        # Get text from all parts of the first candidate
+                        response_text = ""
+                        for part in response.candidates[0].content.parts:
+                            if hasattr(part, 'text'):
+                                response_text += part.text
+                    else:
+                        response_text = response.text
+                    
+                    word_count = len(response_text.split())
+                    print(f"📝 [AI] Gemini 1.5 Pro response: {word_count} words, tokens: {response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 'unknown'}")
+                    if word_count < 400 and is_synopsis:
+                        print(f"⚠️ [AI] WARNING: Synopsis response is too short! May be truncated.")
 
                     return {
-                        "response": response.text,
+                        "response": response_text,
                         "model_used": "gemini-1.5-pro",
                         "tokens_used": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
                     }
             else:
                 # Fallback to GPT-4.1 (flagship for deep text generation)
+                if is_synopsis:
+                    system_content = "You are a professional story synopsis writer. Write complete, comprehensive synopses that are 500-800 words long. Always complete your synopsis fully - never truncate or cut off mid-sentence."
+                    user_content = final_prompt
+                    max_tokens = kwargs.get("max_tokens", 3200)
+                else:
+                    system_content = "You are a creative writing assistant specializing in vivid, detailed descriptions. Generate engaging, sensory-rich descriptions that bring scenes to life."
+                    user_content = f"Generate a detailed, vivid description for: {prompt}"
+                    max_tokens = kwargs.get("max_tokens", 2000)
+                
+                print(f"📝 [AI] Generating with GPT-4.1, max_completion_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
                 response = openai.chat.completions.create(
                     model="gpt-4.1",
                     messages=[
-                        {"role": "system", "content": "You are a creative writing assistant specializing in vivid, detailed descriptions. Generate engaging, sensory-rich descriptions that bring scenes to life."},
-                        {"role": "user", "content": f"Generate a detailed, vivid description for: {prompt}"}
+                        {"role": "system", "content": system_content},
+                        {"role": "user", "content": user_content}
                     ],
-                    max_completion_tokens=kwargs.get("max_tokens", 2000),
-                    temperature=kwargs.get("temperature", 0.8),
+                    max_completion_tokens=max_tokens,
+                    temperature=temperature,
                     top_p=1.0,
                     n=1,
                     stream=False,
                     presence_penalty=0.0,
                     frequency_penalty=0.0
                 )
+                
+                response_text = response.choices[0].message.content
+                word_count = len(response_text.split())
+                print(f"📝 [AI] GPT-4.1 response: {word_count} words, tokens: {response.usage.total_tokens if response.usage else 'unknown'}")
 
                 return {
-                    "response": response.choices[0].message.content,
+                    "response": response_text,
                     "model_used": "gpt-4.1",
                     "tokens_used": response.usage.total_tokens if response.usage else 0
                 }

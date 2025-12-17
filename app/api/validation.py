@@ -708,6 +708,174 @@ async def generate_synopsis(
         raise HTTPException(status_code=500, detail=f"Failed to generate synopsis: {str(e)}")
 
 
+@router.post("/validation/queue/{validation_id}/approve-synopsis")
+async def approve_synopsis(
+    validation_id: str,
+    request: Dict[str, Any] = Body(...),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+) -> Dict[str, Any]:
+    """
+    Approve synopsis (Step 11).
+    This moves the workflow to script generation (Step 12).
+    """
+    try:
+        from ..services.validation_service import validation_service
+        from ..services.email_service import email_service
+        from ..database.session_service_supabase import session_service
+        
+        reviewed_by = x_user_id or request.get('reviewed_by', 'admin')
+        review_notes = request.get('notes', '')
+        checklist = request.get('checklist', {})
+        
+        # Get validation to access project_id, user_id, and synopsis
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        project_id = validation.get('project_id')
+        user_id = validation.get('user_id')
+        synopsis = validation.get('synopsis')
+        client_email = validation.get('client_email')
+        client_name = validation.get('client_name')
+        
+        if not project_id or not user_id:
+            raise HTTPException(status_code=400, detail="Missing project_id or user_id")
+        
+        # Update validation with synopsis approval and checklist
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='pending',  # Keep as pending during script generation
+            workflow_step='script_generation',
+            reviewed_by=reviewed_by,
+            synopsis_approved=True,
+            synopsis_review_notes=review_notes,
+            synopsis_checklist=checklist
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to approve synopsis")
+        
+        # Send email to client with synopsis
+        email_sent = False
+        email_error = None
+        if client_email and synopsis:
+            try:
+                # Get dossier data for email context
+                dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                dossier_data = dossier.snapshot_json if dossier else {}
+                
+                email_sent = await email_service.send_synopsis_approval(
+                    client_email=client_email,
+                    client_name=client_name,
+                    project_id=str(project_id),
+                    validation_id=validation_id,
+                    synopsis=synopsis,
+                    dossier_data=dossier_data,
+                    checklist=checklist,
+                    review_notes=review_notes
+                )
+                if not email_sent:
+                    email_error = "Email service returned False"
+            except Exception as e:
+                print(f"❌ [SYNOPSIS] Error sending synopsis approval email: {e}")
+                import traceback
+                print(f"❌ [SYNOPSIS] Traceback: {traceback.format_exc()}")
+                email_error = str(e)
+        
+        print(f"✅ [SYNOPSIS] Synopsis approved for validation {validation_id}, moving to script generation")
+        
+        return {
+            "success": True,
+            "message": "Synopsis approved successfully. Ready for script generation.",
+            "email_sent": email_sent,
+            "email_error": email_error
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error approving synopsis: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to approve synopsis: {str(e)}")
+
+
+@router.post("/validation/queue/{validation_id}/reject-synopsis")
+async def reject_synopsis(
+    validation_id: str,
+    request: Dict[str, Any] = Body(...),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+) -> Dict[str, Any]:
+    """
+    Reject synopsis (Step 11).
+    This requires revision and regenerates synopsis.
+    """
+    try:
+        from ..services.validation_service import validation_service
+        from ..services.synopsis_generator import synopsis_generator
+        from ..database.session_service_supabase import session_service
+        
+        reviewed_by = x_user_id or request.get('reviewed_by', 'admin')
+        review_notes = request.get('notes', '')
+        
+        if not review_notes:
+            raise HTTPException(status_code=400, detail="Review notes are required for rejection")
+        
+        # Get validation to access project_id and user_id
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        project_id = validation.get('project_id')
+        user_id = validation.get('user_id')
+        
+        if not project_id or not user_id:
+            raise HTTPException(status_code=400, detail="Missing project_id or user_id")
+        
+        # Regenerate synopsis
+        dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+        if not dossier:
+            raise HTTPException(status_code=404, detail="Dossier not found")
+        
+        dossier_data = dossier.snapshot_json
+        
+        print(f"📝 [SYNOPSIS] Regenerating synopsis for validation {validation_id}")
+        new_synopsis = await synopsis_generator.generate_synopsis(dossier_data, project_id)
+        
+        if not new_synopsis:
+            raise HTTPException(status_code=500, detail="Failed to regenerate synopsis")
+        
+        # Update validation with rejection notes and new synopsis
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='pending',
+            workflow_step='synopsis_review',
+            reviewed_by=reviewed_by,
+            synopsis_approved=False,
+            synopsis_review_notes=review_notes,
+            synopsis=new_synopsis
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update synopsis rejection")
+        
+        print(f"✅ [SYNOPSIS] Synopsis rejected and regenerated for validation {validation_id}")
+        
+        return {
+            "success": True,
+            "message": "Synopsis rejected. New synopsis generated for review.",
+            "synopsis": new_synopsis
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error rejecting synopsis: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to reject synopsis: {str(e)}")
+
+
 @router.get("/validation/stats")
 async def get_validation_stats() -> Dict[str, Any]:
     """Get validation queue statistics."""

@@ -123,7 +123,8 @@ class ValidationService:
         workflow_step: Optional[str] = None,
         synopsis: Optional[str] = None,
         synopsis_approved: Optional[bool] = None,
-        synopsis_review_notes: Optional[str] = None
+        synopsis_review_notes: Optional[str] = None,
+        synopsis_checklist: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update validation request status and review information."""
         try:
@@ -167,21 +168,8 @@ class ValidationService:
             if synopsis_review_notes is not None:
                 update_data['synopsis_review_notes'] = synopsis_review_notes
             
-            if workflow_step is not None:
-                update_data['workflow_step'] = workflow_step
-            
-            if synopsis is not None:
-                update_data['synopsis'] = synopsis
-            
-            if synopsis_approved is not None:
-                update_data['synopsis_approved'] = synopsis_approved
-                if synopsis_approved:
-                    update_data['synopsis_reviewed_at'] = datetime.now(timezone.utc).isoformat()
-                    if reviewed_by:
-                        update_data['synopsis_reviewed_by'] = reviewed_by
-            
-            if synopsis_review_notes is not None:
-                update_data['synopsis_review_notes'] = synopsis_review_notes
+            if synopsis_checklist is not None:
+                update_data['synopsis_checklist'] = synopsis_checklist
             
             result = self.supabase.table('validation_queue').update(
                 update_data
