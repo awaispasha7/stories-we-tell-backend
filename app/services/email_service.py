@@ -856,7 +856,6 @@ class EmailService:
         print(f"📧 [EMAIL] Validation ID: {validation_id}")
         
         try:
-            client_display_name = client_name or "Valued Client"
             story_title = dossier_data.get('title', 'Your Story')
             
             # Build checklist status
@@ -967,12 +966,12 @@ class EmailService:
                     </div>
                     
                     <div class="content">
-                        <p>Dear {client_display_name},</p>
+                        <p>Dear Admin,</p>
                         
-                        <p>We're excited to share that your story synopsis for <strong>"{story_title}"</strong> has been reviewed and approved!</p>
+                        <p>The story synopsis for <strong>"{story_title}"</strong> has been reviewed and approved.</p>
                         
                         <div class="synopsis-box">
-                            <h3 style="margin-top: 0; color: #4F46E5;">Your Story Synopsis</h3>
+                            <h3 style="margin-top: 0; color: #4F46E5;">Story Synopsis</h3>
                             <div class="synopsis-text">{synopsis}</div>
                         </div>
                         
@@ -983,9 +982,14 @@ class EmailService:
                         
                         {f'<p><strong>Review Notes:</strong> {review_notes}</p>' if review_notes else ''}
                         
-                        <p>Your story is now moving to the script generation phase. We'll keep you updated on the progress.</p>
+                        <p>The story is now moving to the script generation phase.</p>
                         
-                        <p>If you have any questions or would like to request changes, please don't hesitate to reach out.</p>
+                        <div style="margin: 30px 0; text-align: center;">
+                            <a href="{self.frontend_url}/admin/validate/{validation_id}" 
+                               style="display: inline-block; padding: 12px 30px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+                                View & Manage Validation
+                            </a>
+                        </div>
                     </div>
                     
                     <div class="footer">
