@@ -640,6 +640,74 @@ async def send_review(
         raise HTTPException(status_code=500, detail=f"Failed to send review: {str(e)}")
 
 
+@router.post("/validation/queue/{validation_id}/generate-synopsis")
+async def generate_synopsis(
+    validation_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+) -> Dict[str, Any]:
+    """
+    Generate synopsis for a validation request (Step 10).
+    This is triggered after Step 9 (Dossier Review) is approved.
+    """
+    try:
+        from ..services.validation_service import validation_service
+        from ..services.synopsis_generator import synopsis_generator
+        from ..database.session_service_supabase import session_service
+        
+        # Get validation request
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        project_id = validation.get('project_id')
+        user_id = validation.get('user_id')
+        
+        if not project_id or not user_id:
+            raise HTTPException(status_code=400, detail="Missing project_id or user_id")
+        
+        # Get dossier data
+        dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+        if not dossier:
+            raise HTTPException(status_code=404, detail="Dossier not found")
+        
+        dossier_data = dossier.snapshot_json
+        
+        # Generate synopsis
+        print(f"📝 [SYNOPSIS] Generating synopsis for validation {validation_id}")
+        synopsis = await synopsis_generator.generate_synopsis(dossier_data, project_id)
+        
+        if not synopsis:
+            raise HTTPException(status_code=500, detail="Failed to generate synopsis")
+        
+        # Update validation with synopsis and move to synopsis_review step
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='pending',  # Keep as pending during synopsis review
+            workflow_step='synopsis_review',
+            synopsis=synopsis
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save synopsis")
+        
+        print(f"✅ [SYNOPSIS] Synopsis generated and saved for validation {validation_id}")
+        
+        return {
+            "success": True,
+            "message": "Synopsis generated successfully",
+            "synopsis": synopsis,
+            "word_count": len(synopsis.split())
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error generating synopsis: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate synopsis: {str(e)}")
+
+
 @router.get("/validation/stats")
 async def get_validation_stats() -> Dict[str, Any]:
     """Get validation queue statistics."""
