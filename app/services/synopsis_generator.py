@@ -36,18 +36,20 @@ class SynopsisGenerator:
             
             # Use DESCRIPTION task type (Gemini 2.5 Pro) for creative narrative generation
             print(f"📝 [SYNOPSIS] Calling AI model for synopsis generation...")
-            response = await self.ai_manager.generate_response(
-                task_type=TaskType.DESCRIPTION,
-                user_prompt=synopsis_prompt,
+            response_dict = await self.ai_manager.generate_response(
+                TaskType.DESCRIPTION,
+                synopsis_prompt,
                 conversation_history=[],
                 project_id=project_id
             )
             
-            if not response:
-                print(f"❌ [SYNOPSIS] AI model returned empty response")
+            if not response_dict or "response" not in response_dict:
+                print(f"❌ [SYNOPSIS] AI model returned empty or invalid response")
+                if response_dict and "error" in response_dict:
+                    print(f"❌ [SYNOPSIS] Error from AI model: {response_dict['error']}")
                 return None
             
-            synopsis = response.strip()
+            synopsis = response_dict["response"].strip()
             word_count = len(synopsis.split())
             
             print(f"✅ [SYNOPSIS] Generated synopsis: {word_count} words")
