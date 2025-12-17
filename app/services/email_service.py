@@ -821,10 +821,10 @@ class EmailService:
         review_notes: Optional[str] = None
     ) -> bool:
         """
-        Send synopsis approval email to client with the synopsis document.
+        Send synopsis approval email to all admins with the synopsis document.
         
         Args:
-            client_email: Client email address
+            client_email: Client email address (for context in email)
             client_name: Client name (optional)
             project_id: Project ID
             validation_id: Validation ID
@@ -838,7 +838,20 @@ class EmailService:
         """
         print(f"📧 [EMAIL] Starting synopsis approval email send...")
         print(f"📧 [EMAIL] Provider: {self.provider}")
-        print(f"📧 [EMAIL] To: {client_email}")
+        
+        # Get admin emails from CLIENT_EMAIL env var (comma-separated)
+        internal_emails_str = self.client_email
+        if not internal_emails_str:
+            print(f"⚠️ [EMAIL] No admin emails configured (CLIENT_EMAIL env var is empty)")
+            return False
+        
+        # Parse comma-separated emails
+        internal_emails = [email.strip() for email in internal_emails_str.split(",") if email.strip()]
+        if not internal_emails:
+            print(f"⚠️ [EMAIL] No valid admin emails found in CLIENT_EMAIL")
+            return False
+        
+        print(f"📧 [EMAIL] Recipients: {internal_emails}")
         print(f"📧 [EMAIL] Project ID: {project_id}")
         print(f"📧 [EMAIL] Validation ID: {validation_id}")
         
@@ -987,22 +1000,22 @@ class EmailService:
             
             subject = f"Synopsis Approved: {story_title}"
             
-            # Send email
+            # Send email to all admins
             if self.provider == "smtp":
-                print(f"📧 [EMAIL] Sending via SMTP to {client_email}...")
+                print(f"📧 [EMAIL] Sending via SMTP to {len(internal_emails)} recipients...")
                 result = self._send_via_smtp(
-                    to_emails=[client_email],
+                    to_emails=internal_emails,
                     subject=subject,
                     html_content=synopsis_html
                 )
                 if result:
-                    print(f"✅ [EMAIL] Synopsis approval email sent successfully to {client_email}")
+                    print(f"✅ [EMAIL] Synopsis approval email sent successfully to {', '.join(internal_emails)}")
                 else:
                     print(f"❌ [EMAIL] Failed to send synopsis approval email")
                 return result
             else:  # resend
                 return self._send_via_resend(
-                    to_emails=[client_email],
+                    to_emails=internal_emails,
                     subject=subject,
                     html_content=synopsis_html,
                     from_name="Stories We Tell"

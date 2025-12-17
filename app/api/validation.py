@@ -755,17 +755,17 @@ async def approve_synopsis(
         if not success:
             raise HTTPException(status_code=500, detail="Failed to approve synopsis")
         
-        # Send email to client with synopsis
+        # Send email to all admins with synopsis
         email_sent = False
         email_error = None
-        if client_email and synopsis:
+        if synopsis:
             try:
                 # Get dossier data for email context
                 dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
                 dossier_data = dossier.snapshot_json if dossier else {}
                 
                 email_sent = await email_service.send_synopsis_approval(
-                    client_email=client_email,
+                    client_email=client_email or 'N/A',  # For context in email, not recipient
                     client_name=client_name,
                     project_id=str(project_id),
                     validation_id=validation_id,
