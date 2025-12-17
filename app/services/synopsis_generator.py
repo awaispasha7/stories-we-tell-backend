@@ -16,7 +16,8 @@ class SynopsisGenerator:
     async def generate_synopsis(
         self,
         dossier_data: Dict[str, Any],
-        project_id: str
+        project_id: str,
+        special_instructions: Optional[str] = None
     ) -> Optional[str]:
         """
         Generate a 500-800 word synopsis from clean dossier data.
@@ -32,7 +33,7 @@ class SynopsisGenerator:
             print(f"📝 [SYNOPSIS] Starting synopsis generation for project {project_id}")
             
             # Build synopsis prompt from dossier data
-            synopsis_prompt = self._build_synopsis_prompt(dossier_data)
+            synopsis_prompt = self._build_synopsis_prompt(dossier_data, special_instructions)
             
             # Use DESCRIPTION task type (Gemini 2.5 Pro) for creative narrative generation
             # Pass max_tokens to ensure we get 500-800 words (approximately 2000-3200 tokens)
@@ -84,7 +85,7 @@ class SynopsisGenerator:
             print(f"❌ [SYNOPSIS] Traceback: {traceback.format_exc()}")
             return None
     
-    def _build_synopsis_prompt(self, dossier_data: Dict[str, Any]) -> str:
+    def _build_synopsis_prompt(self, dossier_data: Dict[str, Any], special_instructions: Optional[str] = None) -> str:
         """Build the prompt for synopsis generation from dossier data"""
         
         # Extract key information
@@ -178,6 +179,15 @@ REQUIREMENTS:
 10. Be detailed and vivid - paint a picture with words
 
 IMPORTANT: Your response must be between 500-800 words. Write the complete synopsis now, ensuring you reach at least 500 words:"""
+        
+        # Add special instructions if provided (from admin rejection feedback)
+        if special_instructions and special_instructions.strip():
+            prompt += f"""
+
+ADMIN SPECIAL INSTRUCTIONS (CRITICAL - Follow these guidelines):
+{special_instructions.strip()}
+
+Please incorporate these instructions into your synopsis generation."""
         
         return prompt
 

@@ -817,6 +817,7 @@ async def reject_synopsis(
         
         reviewed_by = x_user_id or request.get('reviewed_by', 'admin')
         review_notes = request.get('notes', '')
+        special_instructions = request.get('special_instructions', '')
         
         if not review_notes:
             raise HTTPException(status_code=400, detail="Review notes are required for rejection")
@@ -840,7 +841,13 @@ async def reject_synopsis(
         dossier_data = dossier.snapshot_json
         
         print(f"📝 [SYNOPSIS] Regenerating synopsis for validation {validation_id}")
-        new_synopsis = await synopsis_generator.generate_synopsis(dossier_data, project_id)
+        if special_instructions:
+            print(f"📝 [SYNOPSIS] Special instructions provided: {special_instructions[:100]}...")
+        new_synopsis = await synopsis_generator.generate_synopsis(
+            dossier_data, 
+            project_id,
+            special_instructions=special_instructions if special_instructions else None
+        )
         
         if not new_synopsis:
             raise HTTPException(status_code=500, detail="Failed to regenerate synopsis")
