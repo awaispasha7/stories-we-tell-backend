@@ -789,6 +789,7 @@ class EmailService:
                     <div class="highlight">
                         <strong>Next Steps:</strong><br>
                         • Review your story dossier above<br>
+                        • <a href="{self.frontend_url}/chat?setGenre=true&projectId={project_id}" style="color: #667eea; font-weight: bold; text-decoration: underline;">Set Genre</a> - Help us categorize your story<br>
                         • Check if any information is missing or needs correction<br>
                         • Reply to this email if you'd like any modifications<br>
                         • We'll be in touch about video production options
