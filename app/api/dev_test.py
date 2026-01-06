@@ -66,35 +66,45 @@ async def test_story_captured_email(
                 user_id = UUID(x_user_id)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid user_id format")
-        elif request.project_id:
-            # If project_id provided but no user_id, try to get from dossier
-            try:
-                dossier = session_service.get_dossier(UUID(request.project_id), UUID("00000000-0000-0000-0000-000000000000"))
-                if dossier:
-                    # Use a default user_id if we can't determine it
-                    user_id = UUID("00000000-0000-0000-0000-000000000000")
-            except Exception:
-                pass
-        
-        if not user_id:
-            user_id = UUID("00000000-0000-0000-0000-000000000000")
         
         # Get story data
         story_data = request.story_data
         if request.project_id and not story_data:
-            # Fetch real dossier data
+            # Fetch real dossier data - need to find user_id from project first
             try:
-                dossier = session_service.get_dossier(UUID(request.project_id), user_id)
+                project_id_uuid = UUID(request.project_id)
+                
+                # If user_id not provided, try to get it from the dossier table
+                if not user_id:
+                    from ..database.supabase import get_supabase
+                    supabase = get_supabase()
+                    # Projects are stored in the dossier table
+                    dossier_result = supabase.table("dossier").select("user_id").eq("project_id", str(project_id_uuid)).limit(1).execute()
+                    
+                    if dossier_result.data and len(dossier_result.data) > 0:
+                        user_id = UUID(dossier_result.data[0]["user_id"])
+                        print(f"✅ Found user_id {user_id} from dossier for project {request.project_id}")
+                    else:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Project {request.project_id} not found in dossier. Please provide user_id in X-User-ID header, or make sure the project exists."
+                        )
+                
+                # Now fetch dossier with both project_id and user_id
+                dossier = session_service.get_dossier(project_id_uuid, user_id)
                 if dossier and dossier.snapshot_json:
                     story_data = dossier.snapshot_json
-                    print(f"✅ Using real dossier data for project {request.project_id}")
+                    print(f"✅ Using real dossier data for project {request.project_id}, user {user_id}")
+                    print(f"📋 Story title: {story_data.get('title', 'Untitled')}")
+                    print(f"📋 Heroes: {len(story_data.get('heroes', []))}")
+                    print(f"📋 Supporting characters: {len(story_data.get('supporting_characters', []))}")
                 else:
                     raise HTTPException(
                         status_code=404,
-                        detail=f"Dossier not found for project {request.project_id}"
+                        detail=f"Dossier not found for project {request.project_id} and user {user_id}. Make sure the story has been completed in the chat."
                     )
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid project_id format")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid project_id format: {str(e)}")
         elif not story_data:
             # Use default test data
             story_data = {
@@ -170,4 +180,69 @@ async def test_email_health():
         "smtp_configured": bool(email_service.smtp_user and email_service.smtp_password),
         "message": "Email service health check"
     }
+
+
+@router.get("/projects/{project_id}/dossier")
+async def get_project_dossier(
+    project_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+):
+    """
+    DEV ENDPOINT: Get dossier data for a project (useful for debugging)
+    
+    This helps you see what story data is stored for a project before testing the email.
+    """
+    try:
+        project_id_uuid = UUID(project_id)
+        
+        # Get user_id
+        user_id = None
+        if x_user_id:
+            try:
+                user_id = UUID(x_user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user_id format")
+        else:
+            # Try to get user_id from dossier table (projects are stored as dossiers)
+            from ..database.supabase import get_supabase
+            supabase = get_supabase()
+            dossier_result = supabase.table("dossier").select("user_id").eq("project_id", str(project_id_uuid)).limit(1).execute()
+            
+            if dossier_result.data and len(dossier_result.data) > 0:
+                user_id = UUID(dossier_result.data[0]["user_id"])
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project {project_id} not found in dossier. Please provide user_id in X-User-ID header."
+                )
+        
+        # Get dossier
+        dossier = session_service.get_dossier(project_id_uuid, user_id)
+        if not dossier:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dossier not found for project {project_id} and user {user_id}"
+            )
+        
+        return {
+            "project_id": str(dossier.project_id),
+            "user_id": str(dossier.user_id),
+            "title": dossier.title,
+            "snapshot_json": dossier.snapshot_json,
+            "created_at": dossier.created_at.isoformat() if dossier.created_at else None,
+            "updated_at": dossier.updated_at.isoformat() if dossier.updated_at else None
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid project_id format: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"❌ [DEV] Error getting dossier: {e}")
+        print(f"❌ [DEV] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get dossier: {str(e)}"
+        )
 
