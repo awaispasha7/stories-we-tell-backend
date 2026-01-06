@@ -745,17 +745,26 @@ class EmailService:
             <meta charset="utf-8">
             <title>Your Story is Ready!</title>
             <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
                 .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
                 .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
                 .story-summary {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }}
-                .script-section {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-                .script-content {{ background: #f5f5f5; padding: 15px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }}
                 .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 14px; }}
                 h1 {{ margin: 0; font-size: 28px; }}
                 h2 {{ color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 10px; }}
                 .highlight {{ background: #fff3cd; padding: 10px; border-radius: 5px; border-left: 4px solid #ffc107; }}
+                .button-container {{ margin: 30px 0; text-align: center; }}
+                .email-button {{ display: inline-block; margin: 10px 5px; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; min-width: 200px; box-sizing: border-box; }}
+                .email-button.secondary {{ background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); }}
+                .email-button:hover {{ opacity: 0.9; }}
+                @media only screen and (max-width: 600px) {{
+                    .container {{ padding: 10px; }}
+                    .content {{ padding: 20px; }}
+                    .email-button {{ display: block; width: 100%; margin: 10px 0; min-width: auto; }}
+                    h1 {{ font-size: 24px; }}
+                    h2 {{ font-size: 20px; }}
+                }}
             </style>
         </head>
         <body>
@@ -768,31 +777,17 @@ class EmailService:
                 <div class="content">
                     <p>Dear {user_name},</p>
                     
-                    <p>We're excited to let you know that your story has been successfully captured and we've generated a video script for you!</p>
+                    <p>We're excited to let you know that your story has been successfully captured!</p>
                     
                     <div class="highlight">
-                        <strong>Project ID:</strong> {project_id}<br>
                         <strong>Story Title:</strong> {story_data.get('title', 'Untitled Story')}
                     </div>
                     
-                    <h2>📖 Your Story Dossier</h2>
-                    <div class="story-summary">
-                        {self._build_dossier_html(story_data)}
-                    </div>
+                    <p>Your story is now in our system and ready for the next steps. We'd love for you to review it and help us categorize it.</p>
                     
-                    <h2>🎥 Generated Video Script</h2>
-                    <div class="script-section">
-                        <p>Here's your personalized video script, ready for production:</p>
-                        <div class="script-content">{generated_script}</div>
-                    </div>
-                    
-                    <div class="highlight">
-                        <strong>Next Steps:</strong><br>
-                        • Review your story dossier above<br>
-                        • <a href="{self.frontend_url}/chat?setGenre=true&projectId={project_id}" style="color: #667eea; font-weight: bold; text-decoration: underline;">Set Genre</a> - Help us categorize your story<br>
-                        • Check if any information is missing or needs correction<br>
-                        • Reply to this email if you'd like any modifications<br>
-                        • We'll be in touch about video production options
+                    <div class="button-container">
+                        <a href="{self.frontend_url}/chat?projectId={project_id}" class="email-button">View Story in Dashboard</a>
+                        <a href="{self.frontend_url}/chat?setGenre=true&projectId={project_id}" class="email-button secondary">Set Genre</a>
                     </div>
                     
                     <p>Thank you for trusting us with your story. We can't wait to help bring it to life!</p>
