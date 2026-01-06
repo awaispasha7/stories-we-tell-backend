@@ -36,19 +36,33 @@ async def test_story_captured_email(
     1. Test email with real project data (provide project_id)
     2. Test email with custom data (provide story_data)
     3. Send to any email address for testing
+    4. Override frontend_url for testing different environments
     
-    Usage examples:
+    Usage examples (with production backend):
     
-    # Test with real project data:
-    POST /api/v1/dev/test-email
+    # Step 1: Find user_id (optional - endpoint can auto-detect from project_id):
+    GET https://your-backend-url.com/api/v1/dev/find-user-id?project_id=37818fad-7260-437b-af74-71cf81fbe7fc
+    # OR
+    GET https://your-backend-url.com/api/v1/dev/find-user-id?email=user@example.com
+    
+    # Step 2: Test with real project data (production):
+    # Note: user_id is optional - endpoint will auto-detect from project_id if not provided
+    POST https://your-backend-url.com/api/v1/dev/test-email
     {
         "project_id": "37818fad-7260-437b-af74-71cf81fbe7fc",
         "user_email": "your-test@email.com",
         "user_name": "Test User"
     }
+    # OR with explicit user_id:
+    POST https://your-backend-url.com/api/v1/dev/test-email
+    -H "X-User-ID: your-user-id-here"
+    {
+        "project_id": "37818fad-7260-437b-af74-71cf81fbe7fc",
+        "user_email": "your-test@email.com"
+    }
     
     # Test with custom data:
-    POST /api/v1/dev/test-email
+    POST https://your-backend-url.com/api/v1/dev/test-email
     {
         "user_email": "your-test@email.com",
         "user_name": "John Doe",
@@ -59,16 +73,19 @@ async def test_story_captured_email(
         }
     }
     
-    # Test with production URL override:
-    POST /api/v1/dev/test-email
+    # Test with production frontend URL:
+    POST https://your-backend-url.com/api/v1/dev/test-email
     {
         "project_id": "37818fad-7260-437b-af74-71cf81fbe7fc",
         "user_email": "your-test@email.com",
         "frontend_url": "https://stories-we-tell.vercel.app"
     }
     
-    Note: The frontend_url defaults to the FRONTEND_URL environment variable.
-    Set FRONTEND_URL in your .env file or environment to configure the default.
+    Note: 
+    - The frontend_url defaults to the FRONTEND_URL environment variable.
+    - Set FRONTEND_URL in your production environment to configure the default.
+    - You can override it per-request using the frontend_url field.
+    - The endpoint works with production backend - just use your production backend URL.
     """
     try:
         # Get user_id (required for dossier lookup)
@@ -88,8 +105,8 @@ async def test_story_captured_email(
                 
                 # If user_id not provided, try to get it from the dossier table
                 if not user_id:
-                    from ..database.supabase import get_supabase
-                    supabase = get_supabase()
+                    from ..database.supabase import get_supabase_client
+                    supabase = get_supabase_client()
                     # Projects are stored in the dossier table
                     dossier_result = supabase.table("dossier").select("user_id").eq("project_id", str(project_id_uuid)).limit(1).execute()
                     
@@ -172,7 +189,8 @@ async def test_story_captured_email(
                 "message": f"Test email sent successfully to {request.user_email}",
                 "email": request.user_email,
                 "project_id": request.project_id,
-                "used_real_data": bool(request.project_id and not request.story_data)
+                "used_real_data": bool(request.project_id and not request.story_data),
+                "frontend_url_used": email_service.frontend_url
             }
         else:
             raise HTTPException(
@@ -189,6 +207,90 @@ async def test_story_captured_email(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to send test email: {str(e)}"
+        )
+
+
+@router.get("/find-user-id")
+async def find_user_id(
+    email: Optional[str] = None,
+    project_id: Optional[str] = None
+):
+    """
+    DEV ENDPOINT: Find user_id by email or project_id
+    
+    This helps you find the user_id needed for the test-email endpoint.
+    
+    Usage:
+    # Find by email:
+    GET /api/v1/dev/find-user-id?email=user@example.com
+    
+    # Find by project_id:
+    GET /api/v1/dev/find-user-id?project_id=37818fad-7260-437b-af74-71cf81fbe7fc
+    
+    # Find by both (more specific):
+    GET /api/v1/dev/find-user-id?email=user@example.com&project_id=37818fad-7260-437b-af74-71cf81fbe7fc
+    """
+    try:
+        from ..database.supabase import get_supabase_client
+        supabase = get_supabase_client()
+        
+        if not email and not project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Please provide either email or project_id (or both)"
+            )
+        
+        user_id = None
+        user_info = None
+        
+        # Try to find by email first
+        if email:
+            user_result = supabase.table("users").select("user_id, email, display_name").eq("email", email).limit(1).execute()
+            if user_result.data and len(user_result.data) > 0:
+                user_info = user_result.data[0]
+                user_id = user_info["user_id"]
+                print(f"✅ Found user by email: {user_id}")
+        
+        # Try to find by project_id (from dossier table)
+        if project_id and not user_id:
+            try:
+                project_id_uuid = UUID(project_id)
+                dossier_result = supabase.table("dossier").select("user_id").eq("project_id", str(project_id_uuid)).limit(1).execute()
+                if dossier_result.data and len(dossier_result.data) > 0:
+                    found_user_id = dossier_result.data[0]["user_id"]
+                    # Get user info
+                    user_result = supabase.table("users").select("user_id, email, display_name").eq("user_id", found_user_id).limit(1).execute()
+                    if user_result.data:
+                        user_info = user_result.data[0]
+                        user_id = found_user_id
+                        print(f"✅ Found user by project_id: {user_id}")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid project_id format")
+        
+        if not user_id:
+            error_msg = "User not found"
+            if email:
+                error_msg += f" with email: {email}"
+            if project_id:
+                error_msg += f" with project_id: {project_id}"
+            raise HTTPException(status_code=404, detail=error_msg)
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "user": user_info,
+            "found_by": "email" if email and user_info and user_info.get("email") == email else "project_id" if project_id else "unknown"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"❌ [DEV] Error finding user_id: {e}")
+        print(f"❌ [DEV] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to find user_id: {str(e)}"
         )
 
 
@@ -234,8 +336,8 @@ async def get_project_dossier(
                 raise HTTPException(status_code=400, detail="Invalid user_id format")
         else:
             # Try to get user_id from dossier table (projects are stored as dossiers)
-            from ..database.supabase import get_supabase
-            supabase = get_supabase()
+            from ..database.supabase import get_supabase_client
+            supabase = get_supabase_client()
             dossier_result = supabase.table("dossier").select("user_id").eq("project_id", str(project_id_uuid)).limit(1).execute()
             
             if dossier_result.data and len(dossier_result.data) > 0:
