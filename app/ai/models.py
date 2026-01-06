@@ -252,6 +252,9 @@ class AIModelManager:
                                 dossier_info += f" (age {hero.get('age_at_story')})"
                             if hero.get('relationship_to_user'):
                                 dossier_info += f", {hero.get('relationship_to_user')}"
+                            # Include photo status - CRITICAL for checking if photos already exist
+                            if hero.get('photo_url') and hero.get('photo_url').strip():
+                                dossier_info += f" [PHOTO EXISTS: {hero.get('photo_url')}]"
                             dossier_info += "\n"
                 
                 # Supporting Characters
@@ -261,6 +264,9 @@ class AIModelManager:
                             dossier_info += f"Supporting: {char.get('name')}"
                             if char.get('role'):
                                 dossier_info += f" ({char.get('role')})"
+                            # Include photo status - CRITICAL for checking if photos already exist
+                            if char.get('photo_url') and char.get('photo_url').strip():
+                                dossier_info += f" [PHOTO EXISTS: {char.get('photo_url')}]"
                             dossier_info += "\n"
                 
                 # Story Type & Perspective
@@ -337,9 +343,12 @@ class AIModelManager:
            - For each: name → role → description (light metadata only)
            - DO NOT ask about photos yet - photos come later in Step 4
         4. STEP 4 - PHOTO UPLOAD (Separate step after all characters):
-           - AFTER all heroes and supporting characters are collected, ask about photos:
-           - For each hero: "Do you have a photo of [hero name]? You can upload it now or skip and we'll send you a link later."
-           - For each supporting character (optional): "Do you have a photo of [character name]? (optional - you can skip)"
+           - AFTER all heroes and supporting characters are collected, check for photos:
+           - CRITICAL: Check the dossier to see which characters already have photo_url set
+           - Only ask about photos for characters that do NOT have a photo_url (or have empty photo_url)
+           - For each hero WITHOUT photo_url: "Do you have a photo of [hero name]? You can upload it now or skip and we'll send you a link later."
+           - For each supporting character WITHOUT photo_url (optional): "Do you have a photo of [character name]? (optional - you can skip)"
+           - If a character already has a photo_url in the dossier, DO NOT ask about photos for that character again
            - User can: upload now or skip (link sent later)
         5. STEP 5 - SETTING & TIME:
            - Ask: "Where does the story happen?"
@@ -366,8 +375,18 @@ class AIModelManager:
            - Ask: "What do you want them to feel?"
            - Ask: "What perspective?" (first_person, narrator_voice, legend_myth_tone, documentary_tone)
            - CRITICAL: You MUST ask ALL THREE questions in this order
-        8. STEP 8 - DATA PACKAGING: Bundle characters, photos, setting, tone & style, perspective. Create Story Record. Store in RAG. Generate Story ID.
-        9. COMPLETION: Recognize when story is complete
+        8. STEP 8 - STORY CONTENT COLLECTION (CRITICAL):
+           - AFTER all setup steps are complete (characters, photos, setting, story type, audience), collect the ACTUAL STORY:
+           - Ask: "What's the main problem or challenge [hero name] faces in this story?" (problem_statement)
+           - Ask: "What does [hero name] do to address this problem or navigate this situation?" (actions_taken)
+           - DO NOT skip to the ending until the story problem and actions have been collected
+           - The story is just getting started at this point - you need to collect the story content first
+        9. STEP 9 - OUTCOME (Only after story content is collected):
+           - ONLY ask about the ending AFTER problem_statement and actions_taken have been collected
+           - Ask: "How does the story end? What's the final outcome or resolution?" (outcome)
+           - CRITICAL: Do NOT ask about the ending prematurely - wait until the story has been told
+        10. STEP 10 - DATA PACKAGING: Bundle characters, photos, setting, tone & style, perspective, story content. Create Story Record. Store in RAG. Generate Story ID.
+        11. COMPLETION: Recognize when story is complete
         
         CHARACTER COLLECTION PRIORITY:
         - ALWAYS collect HEROES first (primary characters)
@@ -390,6 +409,8 @@ class AIModelManager:
         - Look for phrases: "at the end", "finally", "in conclusion", "that's the story", "that's my story", "story complete", "i'm done", "finished", "that's all", "the end"
         - When story seems complete, acknowledge and move to next phase
         - Don't keep asking questions if story is finished
+        - CRITICAL: Do NOT assume story is complete just because setup steps (characters, photos, setting) are done
+        - The story content (problem, actions, outcome) must be collected before considering the story complete
         {auth_instructions}
         
         NEW STORY REQUESTS & USER INTENT:
@@ -428,9 +449,13 @@ class AIModelManager:
         - If first hero collected and second hero not asked → Ask "Is there a second hero in the story?"
         - If second hero needed → Collect full intake for hero #2
         STEP 3: If all heroes collected and supporting_characters not asked → Ask "Are there other important people in the story?" (up to 2, light metadata only)
-        STEP 4: If all heroes and supporting characters collected and photos not requested → Ask about photos:
-        - For each hero: "Do you have a photo of [hero name]? You can upload it now or skip and we'll send you a link later."
-        - For each supporting character (optional): "Do you have a photo of [character name]? (optional - you can skip)"
+        STEP 4: If all heroes and supporting characters collected → Check for photos:
+        - CRITICAL: Before asking about photos, check if characters already have photo_url set in the dossier
+        - Only ask about photos for characters that do NOT have a photo_url (or have empty photo_url)
+        - For each hero WITHOUT photo_url: "Do you have a photo of [hero name]? You can upload it now or skip and we'll send you a link later."
+        - For each supporting character WITHOUT photo_url (optional): "Do you have a photo of [character name]? (optional - you can skip)"
+        - If a character already has a photo_url in the dossier, DO NOT ask about photos for that character again
+        - Skip to next step if all characters already have photos (or user has skipped/declined)
         STEP 5: If all characters and photos done, and setting incomplete → Ask Setting & Time:
         - If story_location is Unknown → Ask "Where does the story happen?"
         - If story_timeframe is Unknown → Ask "What time period?"
@@ -449,8 +474,16 @@ class AIModelManager:
         STEP 7: If audience.who_will_see_first is empty → Ask "Who will see this first?"
         - If audience.desired_feeling is empty → Ask "What do you want them to feel?" (CRITICAL: Must ask this after who_will_see_first)
         - If perspective is Unknown → Ask "What perspective?" (first_person, narrator_voice, legend_myth_tone, documentary_tone)
-        STEP 8: Data packaging happens automatically when all steps are complete
-        COMPLETION: If outcome is Unknown → Ask "How does the story end?" (only if story seems complete)
+        STEP 8: STORY CONTENT COLLECTION (CRITICAL - Must collect story before asking about ending):
+        - After all setup steps (characters, photos, setting, story type, audience) are complete, collect the ACTUAL STORY:
+        - If problem_statement is Unknown or empty → Ask "What's the main problem or challenge [hero name] faces in this story?"
+        - If actions_taken is Unknown or empty → Ask "What does [hero name] do to address this problem or navigate this situation?"
+        - ONLY after problem_statement and actions_taken are collected, then ask about outcome
+        - DO NOT ask about the ending until the story problem and actions have been collected
+        STEP 9: OUTCOME (Only after story content is collected):
+        - If outcome is Unknown or empty AND problem_statement and actions_taken are already collected → Ask "How does the story end? What's the final outcome or resolution?"
+        - CRITICAL: Only ask about ending AFTER the story problem and actions have been discussed
+        STEP 10: Data packaging happens automatically when all steps are complete
 
         ATTACHMENT ANALYSIS GUIDELINES:
         - When the user shares images or attachments, ALWAYS provide detailed visual analysis
