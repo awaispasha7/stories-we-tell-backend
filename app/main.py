@@ -81,6 +81,13 @@ except Exception as e:
     print(f"ERROR: Error importing validation router: {e}")
     validation = None
 
+try:
+    from app.api import dev_test
+    print("SUCCESS: Dev test router imported")
+except Exception as e:
+    print(f"ERROR: Error importing dev_test router: {e}")
+    dev_test = None
+
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -161,6 +168,13 @@ if validation:
         print("SUCCESS: Validation router included")
     except Exception as e:
         print(f"ERROR: Error including validation router: {e}")
+
+if dev_test:
+    try:
+        app.include_router(dev_test.router, prefix="/api/v1", tags=["dev"])
+        print("SUCCESS: Dev test router included")
+    except Exception as e:
+        print(f"ERROR: Error including dev_test router: {e}")
 
 # Add root route to handle 404 errors
 @app.get("/")
