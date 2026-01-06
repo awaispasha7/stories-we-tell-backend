@@ -21,6 +21,7 @@ class TestEmailRequest(BaseModel):
     user_name: Optional[str] = "Test User"  # Optional user name
     story_data: Optional[Dict[str, Any]] = None  # Optional: override story data
     generated_script: Optional[str] = None  # Optional: override script (not used in client email anymore)
+    frontend_url: Optional[str] = None  # Optional: override frontend URL for testing (defaults to FRONTEND_URL env var)
 
 
 @router.post("/test-email")
@@ -57,6 +58,17 @@ async def test_story_captured_email(
             "supporting_characters": [{"name": "Bob", "role": "friend"}]
         }
     }
+    
+    # Test with production URL override:
+    POST /api/v1/dev/test-email
+    {
+        "project_id": "37818fad-7260-437b-af74-71cf81fbe7fc",
+        "user_email": "your-test@email.com",
+        "frontend_url": "https://stories-we-tell.vercel.app"
+    }
+    
+    Note: The frontend_url defaults to the FRONTEND_URL environment variable.
+    Set FRONTEND_URL in your .env file or environment to configure the default.
     """
     try:
         # Get user_id (required for dossier lookup)
@@ -131,16 +143,28 @@ async def test_story_captured_email(
         # Use provided script or empty string (not used in client email anymore)
         generated_script = request.generated_script or "Test script content (not shown in client email)"
         
-        # Send test email
-        print(f"📧 [DEV] Sending test email to {request.user_email}")
-        success = await email_service.send_story_captured_email(
-            user_email=request.user_email,
-            user_name=request.user_name or "Test User",
-            story_data=story_data,
-            generated_script=generated_script,
-            project_id=request.project_id or str(UUID("00000000-0000-0000-0000-000000000000")),
-            client_emails=None
-        )
+        # Override frontend_url if provided (for testing different environments)
+        original_frontend_url = email_service.frontend_url
+        if request.frontend_url:
+            email_service.frontend_url = request.frontend_url
+            print(f"🔧 [DEV] Overriding frontend_url to: {request.frontend_url}")
+        
+        try:
+            # Send test email
+            print(f"📧 [DEV] Sending test email to {request.user_email}")
+            print(f"🌐 [DEV] Using frontend_url: {email_service.frontend_url}")
+            success = await email_service.send_story_captured_email(
+                user_email=request.user_email,
+                user_name=request.user_name or "Test User",
+                story_data=story_data,
+                generated_script=generated_script,
+                project_id=request.project_id or str(UUID("00000000-0000-0000-0000-000000000000")),
+                client_emails=None
+            )
+        finally:
+            # Restore original frontend_url
+            if request.frontend_url:
+                email_service.frontend_url = original_frontend_url
         
         if success:
             return {
@@ -172,13 +196,19 @@ async def test_story_captured_email(
 async def test_email_health():
     """
     DEV ENDPOINT: Check if email service is configured and available
+    
+    Shows current configuration including frontend_url.
+    The frontend_url is read from FRONTEND_URL environment variable.
     """
+    import os
     return {
         "email_service_available": email_service.available,
         "email_provider": email_service.provider,
         "frontend_url": email_service.frontend_url,
+        "frontend_url_env": os.getenv("FRONTEND_URL", "Not set (using default: https://stories-we-tell.vercel.app)"),
         "smtp_configured": bool(email_service.smtp_user and email_service.smtp_password),
-        "message": "Email service health check"
+        "message": "Email service health check",
+        "note": "Set FRONTEND_URL environment variable to configure the frontend URL for email links. You can also override it per-request using the frontend_url field in the test-email endpoint."
     }
 
 
