@@ -755,9 +755,9 @@ class EmailService:
                 h2 {{ color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 10px; }}
                 .highlight {{ background: #fff3cd; padding: 10px; border-radius: 5px; border-left: 4px solid #ffc107; }}
                 .button-container {{ margin: 30px 0; text-align: center; }}
-                .email-button {{ display: inline-block; margin: 10px 5px; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; min-width: 200px; box-sizing: border-box; }}
-                .email-button.secondary {{ background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); }}
-                .email-button:hover {{ opacity: 0.9; }}
+                .email-button {{ display: inline-block; margin: 10px 5px; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; min-width: 200px; box-sizing: border-box; }}
+                .email-button.secondary {{ background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); color: white !important; }}
+                .email-button:hover {{ opacity: 0.9; color: white !important; }}
                 @media only screen and (max-width: 600px) {{
                     .container {{ padding: 10px; }}
                     .content {{ padding: 20px; }}
@@ -786,8 +786,8 @@ class EmailService:
                     <p>Your story is now in our system and ready for the next steps. We'd love for you to review it and help us categorize it.</p>
                     
                     <div class="button-container">
-                        <a href="{self.frontend_url}/chat?projectId={project_id}" class="email-button">View Story in Dashboard</a>
-                        <a href="{self.frontend_url}/chat?setGenre=true&projectId={project_id}" class="email-button secondary">Set Genre</a>
+                        <a href="{self.frontend_url}/chat?projectId={project_id}" class="email-button" style="color: white !important; text-decoration: none;">View Story in Dashboard</a>
+                        <a href="{self.frontend_url}/chat?setGenre=true&projectId={project_id}" class="email-button secondary" style="color: white !important; text-decoration: none;">Set Genre</a>
                     </div>
                     
                     <p>Thank you for trusting us with your story. We can't wait to help bring it to life!</p>
