@@ -883,6 +883,153 @@ async def reject_synopsis(
         raise HTTPException(status_code=500, detail=f"Failed to reject synopsis: {str(e)}")
 
 
+@router.post("/validation/queue/{validation_id}/generate-script")
+async def generate_script(
+    validation_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+) -> Dict[str, Any]:
+    """
+    Generate full script for a validation request (Step 12).
+    This is triggered after synopsis approval.
+    """
+    try:
+        from ..services.validation_service import validation_service
+        from ..services.script_generator import script_generator
+        from ..database.session_service_supabase import session_service
+        
+        # Get validation request
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        project_id = validation.get('project_id')
+        user_id = validation.get('user_id')
+        synopsis = validation.get('synopsis')
+        
+        if not project_id or not user_id:
+            raise HTTPException(status_code=400, detail="Missing project_id or user_id")
+        
+        if not synopsis:
+            raise HTTPException(status_code=400, detail="Synopsis is required for script generation")
+        
+        # Get dossier data
+        dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+        if not dossier:
+            raise HTTPException(status_code=404, detail="Dossier not found")
+        
+        dossier_data = dossier.snapshot_json
+        
+        # Generate script
+        print(f"📝 [SCRIPT] Generating script for validation {validation_id}")
+        script = await script_generator.generate_script(synopsis, dossier_data, project_id)
+        
+        if not script:
+            raise HTTPException(status_code=500, detail="Failed to generate script")
+        
+        # Update validation with script
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='pending',  # Keep as pending during script generation phase
+            workflow_step='script_generation',
+            full_script=script
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save script")
+        
+        print(f"✅ [SCRIPT] Script generated and saved for validation {validation_id}")
+        
+        return {
+            "success": True,
+            "message": "Script generated successfully",
+            "script": script,
+            "word_count": len(script.split())
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error generating script: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate script: {str(e)}")
+
+
+@router.post("/validation/queue/{validation_id}/generate-shot-list")
+async def generate_shot_list(
+    validation_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+) -> Dict[str, Any]:
+    """
+    Generate shot list for a validation request (Step 13).
+    This is triggered after script generation.
+    """
+    try:
+        from ..services.validation_service import validation_service
+        from ..services.shot_list_generator import shot_list_generator
+        from ..database.session_service_supabase import session_service
+        
+        # Get validation request
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        project_id = validation.get('project_id')
+        user_id = validation.get('user_id')
+        full_script = validation.get('full_script')
+        
+        if not project_id or not user_id:
+            raise HTTPException(status_code=400, detail="Missing project_id or user_id")
+        
+        if not full_script:
+            raise HTTPException(status_code=400, detail="Script is required for shot list generation")
+        
+        # Get dossier data
+        dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+        if not dossier:
+            raise HTTPException(status_code=404, detail="Dossier not found")
+        
+        dossier_data = dossier.snapshot_json
+        
+        # Generate shot list
+        print(f"📝 [SHOT_LIST] Generating shot list for validation {validation_id}")
+        shot_list = await shot_list_generator.generate_shot_list(full_script, dossier_data, project_id)
+        
+        if not shot_list:
+            raise HTTPException(status_code=500, detail="Failed to generate shot list")
+        
+        # Update validation with shot list
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='pending',  # Keep as pending during generation phase
+            workflow_step='script_generation',
+            shot_list=shot_list
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save shot list")
+        
+        scene_count = len(shot_list.get('scenes', []))
+        total_shots = sum(len(scene.get('shots', [])) for scene in shot_list.get('scenes', []))
+        print(f"✅ [SHOT_LIST] Shot list generated and saved for validation {validation_id}: {scene_count} scenes, {total_shots} shots")
+        
+        return {
+            "success": True,
+            "message": "Shot list generated successfully",
+            "shot_list": shot_list,
+            "scene_count": scene_count,
+            "total_shots": total_shots
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error generating shot list: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate shot list: {str(e)}")
+
+
 @router.get("/validation/stats")
 async def get_validation_stats() -> Dict[str, Any]:
     """Get validation queue statistics."""

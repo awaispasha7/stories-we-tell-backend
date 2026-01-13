@@ -124,7 +124,9 @@ class ValidationService:
         synopsis: Optional[str] = None,
         synopsis_approved: Optional[bool] = None,
         synopsis_review_notes: Optional[str] = None,
-        synopsis_checklist: Optional[Dict[str, Any]] = None
+        synopsis_checklist: Optional[Dict[str, Any]] = None,
+        full_script: Optional[str] = None,
+        shot_list: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update validation request status and review information."""
         try:
@@ -175,6 +177,12 @@ class ValidationService:
                 except Exception as e:
                     print(f"⚠️ [VALIDATION] synopsis_checklist column may not exist yet: {e}")
                     # Continue without synopsis_checklist if column doesn't exist
+            
+            if full_script is not None:
+                update_data['full_script'] = full_script
+            
+            if shot_list is not None:
+                update_data['shot_list'] = shot_list
             
             result = self.supabase.table('validation_queue').update(
                 update_data
