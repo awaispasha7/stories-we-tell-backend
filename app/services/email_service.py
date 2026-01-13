@@ -783,7 +783,9 @@ class EmailService:
                         <strong>Story Title:</strong> {story_data.get('title', 'Untitled Story')}
                     </div>
                     
-                    <p>Your story is now in our system and ready for the next steps. We'd love for you to review it and help us categorize it.</p>
+                    <p>Your story is now in our system and ready for the next steps. We'd love for you to review it and help us categorize it by selecting a genre.</p>
+                    
+                    <p style="font-size: 14px; color: #666; margin: 12px 0;">Our featured genres include: <strong>Historic Romance</strong>, <strong>Family Saga</strong>, <strong>Childhood Adventure</strong>, <strong>Documentary</strong>, and <strong>Historical Epic</strong>. You can also choose from other genre options or enter a custom genre.</p>
                     
                     <div class="button-container">
                         <a href="{self.frontend_url}/chat?projectId={project_id}" class="email-button" style="color: white !important; text-decoration: none;">View Story in Dashboard</a>

@@ -65,7 +65,7 @@ class AIModelManager:
         # Model selection mapping - using latest recommended models
         self.model_mapping = {
             TaskType.CHAT: "gpt-4.1-mini",  # Best price-to-quality for high-traffic chat
-            TaskType.DESCRIPTION: "gemini-1.5-pro",  # Stable Pro tier for creative reasoning
+            TaskType.DESCRIPTION: "gemini-2.5-flash",  # Best price-performance model for creative reasoning
             TaskType.SCRIPT: "claude-sonnet-4-5-20250929",  # Latest Claude Sonnet 4.5 (per Anthropic API docs)
             TaskType.SCENE: "gpt-4.1",  # Flagship for deep text generation
         }
@@ -611,7 +611,7 @@ class AIModelManager:
             raise Exception(f"OpenAI chat error: {str(e)}")
     
     async def _generate_description_response(self, prompt: str, **kwargs) -> Dict[str, Any]:
-        """Generate description using Gemini 1.5 Pro (stable) with fallback to Flash or GPT"""
+        """Generate description using Gemini 2.5 Flash with fallback to GPT"""
         try:
             # Check if this is a synopsis generation (prompt contains "synopsis" or "500-800 words")
             is_synopsis = "synopsis" in prompt.lower() or "500-800 words" in prompt.lower()
@@ -627,11 +627,12 @@ class AIModelManager:
                 max_tokens = kwargs.get("max_tokens", 2000)
                 temperature = kwargs.get("temperature", 0.8)
             
+            gemini_succeeded = False
             if self.gemini_available:
-                # Try Gemini 1.5 Pro first (stable, GA model)
+                # Use Gemini 2.5 Flash (best price-performance model)
                 try:
-                    model = genai.GenerativeModel('gemini-1.5-pro')
-                    print(f"📝 [AI] Generating with Gemini 1.5 Pro, max_output_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    print(f"📝 [AI] Generating with Gemini 2.5 Flash, max_output_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
                     response = model.generate_content(
                         final_prompt,
                         generation_config=genai.types.GenerationConfig(
@@ -658,62 +659,26 @@ class AIModelManager:
                         response_text = response.text
                     
                     word_count = len(response_text.split())
-                    print(f"📝 [AI] Gemini 1.5 Pro response: {word_count} words, tokens: {response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 'unknown'}")
+                    print(f"📝 [AI] Gemini 2.5 Flash response: {word_count} words, tokens: {response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 'unknown'}")
                     if word_count < 400 and is_synopsis:
                         print(f"⚠️ [AI] WARNING: Synopsis response is too short! May be truncated.")
 
                     return {
                         "response": response_text,
-                        "model_used": "gemini-1.5-pro",
+                        "model_used": "gemini-2.5-flash",
                         "tokens_used": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
                     }
                 except Exception as e:
-                    print(f"⚠️ Gemini 1.5 Pro failed: {e}")
-                    # Fallback to Gemini 1.5 Flash (faster, cheaper alternative)
-                    try:
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        print(f"📝 [AI] Falling back to Gemini 1.5 Flash, max_output_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
-                        response = model.generate_content(
-                            final_prompt,
-                            generation_config=genai.types.GenerationConfig(
-                                max_output_tokens=max_tokens,
-                                temperature=temperature,
-                                stop_sequences=[]  # Don't stop early
-                            ),
-                            safety_settings=[
-                                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-                            ]
-                        )
-                        
-                        # Get full response text - handle both single and multi-part responses
-                        if hasattr(response, 'candidates') and response.candidates:
-                            response_text = ""
-                            for part in response.candidates[0].content.parts:
-                                if hasattr(part, 'text'):
-                                    response_text += part.text
-                        else:
-                            response_text = response.text
-                        
-                        word_count = len(response_text.split())
-                        print(f"📝 [AI] Gemini 1.5 Flash response: {word_count} words, tokens: {response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 'unknown'}")
-                        if word_count < 400 and is_synopsis:
-                            print(f"⚠️ [AI] WARNING: Synopsis response is too short! May be truncated.")
-
-                        return {
-                            "response": response_text,
-                            "model_used": "gemini-1.5-flash",
-                            "tokens_used": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
-                        }
-                    except Exception as e2:
-                        print(f"⚠️ Gemini 1.5 Flash also failed: {e2}")
-                        print(f"⚠️ Falling back to GPT-4o for description generation")
-                        # Fall through to GPT fallback
+                    print(f"⚠️ Gemini 2.5 Flash failed: {e}")
+                    print(f"⚠️ Falling back to GPT for description generation")
+                    # Mark that Gemini failed, fall through to GPT fallback
+                    gemini_succeeded = False
             
-            # Fallback to GPT-4o if Gemini not available or failed
-            if not self.gemini_available:
+            # Fallback to GPT if Gemini not available or failed
+            if not self.gemini_available or not gemini_succeeded:
+                # Use GPT-4.1 for synopsis, GPT-4o for other descriptions
+                gpt_model = "gpt-4.1" if is_synopsis else "gpt-4o"
+                
                 if is_synopsis:
                     system_content = "You are a professional story synopsis writer. Write complete, comprehensive synopses that are 500-800 words long. Always complete your synopsis fully - never truncate or cut off mid-sentence."
                     user_content = final_prompt
@@ -723,9 +688,9 @@ class AIModelManager:
                     user_content = f"Generate a detailed, vivid description for: {prompt}"
                     max_tokens = kwargs.get("max_tokens", 2000)
                 
-                print(f"📝 [AI] Generating with GPT-4o (fallback), max_completion_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
+                print(f"📝 [AI] Generating with {gpt_model} (fallback), max_completion_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
                 response = openai.chat.completions.create(
-                    model="gpt-4o",
+                    model=gpt_model,
                     messages=[
                         {"role": "system", "content": system_content},
                         {"role": "user", "content": user_content}
@@ -741,11 +706,11 @@ class AIModelManager:
                 
                 response_text = response.choices[0].message.content
                 word_count = len(response_text.split())
-                print(f"📝 [AI] GPT-4o response: {word_count} words, tokens: {response.usage.total_tokens if response.usage else 'unknown'}")
+                print(f"📝 [AI] {gpt_model} response: {word_count} words, tokens: {response.usage.total_tokens if response.usage else 'unknown'}")
 
                 return {
                     "response": response_text,
-                    "model_used": "gpt-4o",
+                    "model_used": gpt_model,
                     "tokens_used": response.usage.total_tokens if response.usage else 0
                 }
         except Exception as e:
