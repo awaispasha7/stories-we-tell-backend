@@ -672,12 +672,28 @@ async def generate_synopsis(
         
         dossier_data = dossier.snapshot_json
         
-        # Generate synopsis
+        # Generate synopsis (this will also refine genre predictions)
         print(f"📝 [SYNOPSIS] Generating synopsis for validation {validation_id}")
         synopsis = await synopsis_generator.generate_synopsis(dossier_data, project_id)
         
         if not synopsis:
             raise HTTPException(status_code=500, detail="Failed to generate synopsis")
+        
+        # Get refined genre predictions from dossier_data (updated by synopsis_generator)
+        genre_predictions = dossier_data.get('genre_predictions', [])
+        
+        # Update dossier with refined genre predictions
+        if genre_predictions:
+            try:
+                from ..models import DossierUpdate
+                # Update dossier snapshot_json with genre predictions
+                updated_snapshot = dossier.snapshot_json.copy() if dossier.snapshot_json else {}
+                updated_snapshot['genre_predictions'] = genre_predictions
+                dossier_update = DossierUpdate(snapshot_json=updated_snapshot)
+                session_service.update_dossier(UUID(project_id), UUID(user_id), dossier_update)
+                print(f"🎭 [GENRE] Updated dossier with refined genre predictions")
+            except Exception as e:
+                print(f"⚠️ [GENRE] Failed to update dossier with genre predictions: {e}")
         
         # Update validation with synopsis and move to synopsis_review step
         success = await validation_service.update_validation_status(
@@ -919,31 +935,116 @@ async def generate_script(
         
         dossier_data = dossier.snapshot_json
         
-        # Generate script
-        print(f"📝 [SCRIPT] Generating script for validation {validation_id}")
-        script = await script_generator.generate_script(synopsis, dossier_data, project_id)
+        # Get genre predictions from dossier
+        genre_predictions = dossier_data.get('genre_predictions', [])
         
-        if not script:
-            raise HTTPException(status_code=500, detail="Failed to generate script")
+        if not genre_predictions:
+            # Fallback: generate single script without genre
+            print(f"📝 [SCRIPT] No genre predictions found, generating single script")
+            script = await script_generator.generate_script(synopsis, dossier_data, project_id)
+            
+            if not script:
+                raise HTTPException(status_code=500, detail="Failed to generate script")
+            
+            # Update validation with single script
+            success = await validation_service.update_validation_status(
+                validation_id=UUID(validation_id),
+                status='pending',
+                workflow_step='script_generation',
+                full_script=script
+            )
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to save script")
+            
+            return {
+                "success": True,
+                "message": "Script generated successfully",
+                "script": script,
+                "word_count": len(script.split()),
+                "genre_scripts": []
+            }
         
-        # Update validation with script
+        # Generate scripts for all detected genres in parallel
+        print(f"📝 [SCRIPT] Generating scripts for {len(genre_predictions)} genres in parallel")
+        
+        import asyncio
+        
+        async def generate_genre_script(genre_pred: Dict[str, Any]) -> Dict[str, Any]:
+            """Generate script for a single genre"""
+            genre = genre_pred.get('genre', '')
+            confidence = genre_pred.get('confidence', 0.0)
+            
+            try:
+                print(f"📝 [SCRIPT] Generating script for genre: {genre} (confidence: {confidence:.2%})")
+                script = await script_generator.generate_script(
+                    synopsis=synopsis,
+                    dossier_data=dossier_data,
+                    project_id=project_id,
+                    genre=genre
+                )
+                
+                if script:
+                    return {
+                        "genre": genre,
+                        "script": script,
+                        "confidence": confidence,
+                        "word_count": len(script.split())
+                    }
+                else:
+                    print(f"⚠️ [SCRIPT] Failed to generate script for genre: {genre}")
+                    return None
+            except Exception as e:
+                print(f"❌ [SCRIPT] Error generating script for genre {genre}: {e}")
+                return None
+        
+        # Generate all scripts in parallel
+        genre_scripts_tasks = [generate_genre_script(pred) for pred in genre_predictions]
+        genre_scripts_results = await asyncio.gather(*genre_scripts_tasks, return_exceptions=True)
+        
+        # Filter out None results and exceptions
+        genre_scripts = []
+        for result in genre_scripts_results:
+            if isinstance(result, Exception):
+                print(f"❌ [SCRIPT] Exception in genre script generation: {result}")
+                continue
+            if result is not None:
+                genre_scripts.append(result)
+        
+        if not genre_scripts:
+            raise HTTPException(status_code=500, detail="Failed to generate any genre scripts")
+        
+        print(f"✅ [SCRIPT] Generated {len(genre_scripts)} genre scripts")
+        
+        # Store genre scripts in validation
         success = await validation_service.update_validation_status(
             validation_id=UUID(validation_id),
-            status='pending',  # Keep as pending during script generation phase
+            status='pending',
             workflow_step='script_generation',
-            full_script=script
+            genre_scripts=genre_scripts
         )
         
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to save script")
+            raise HTTPException(status_code=500, detail="Failed to save genre scripts")
         
-        print(f"✅ [SCRIPT] Script generated and saved for validation {validation_id}")
+        # Also store the highest confidence script as full_script for backward compatibility
+        if genre_scripts:
+            highest_confidence_script = max(genre_scripts, key=lambda x: x.get('confidence', 0.0))
+            await validation_service.update_validation_status(
+                validation_id=UUID(validation_id),
+                status='pending',
+                workflow_step='script_generation',
+                full_script=highest_confidence_script.get('script', '')
+            )
+        
+        print(f"✅ [SCRIPT] Genre scripts generated and saved for validation {validation_id}")
         
         return {
             "success": True,
-            "message": "Script generated successfully",
-            "script": script,
-            "word_count": len(script.split())
+            "message": f"Generated {len(genre_scripts)} genre scripts successfully",
+            "genre_scripts": genre_scripts,
+            "script": genre_scripts[0].get('script', '') if genre_scripts else '',  # For backward compatibility
+            "word_count": genre_scripts[0].get('word_count', 0) if genre_scripts else 0
         }
         
     except HTTPException:
@@ -953,6 +1054,71 @@ async def generate_script(
         import traceback
         print(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to generate script: {str(e)}")
+
+
+@router.post("/validation/queue/{validation_id}/select-genre-script")
+async def select_genre_script(
+    validation_id: str,
+    request: Dict[str, Any] = Body(...),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+) -> Dict[str, Any]:
+    """
+    Select a genre script from the generated genre scripts (Step 12).
+    This sets the selected script as the full_script for subsequent steps.
+    """
+    try:
+        from ..services.validation_service import validation_service
+        
+        selected_genre = request.get('selected_genre_script')
+        if not selected_genre:
+            raise HTTPException(status_code=400, detail="selected_genre_script is required")
+        
+        # Get validation to access genre_scripts
+        validation = await validation_service.get_validation_by_id(UUID(validation_id))
+        if not validation:
+            raise HTTPException(status_code=404, detail="Validation request not found")
+        
+        genre_scripts = validation.get('genre_scripts', [])
+        if not genre_scripts:
+            raise HTTPException(status_code=400, detail="No genre scripts found. Please generate scripts first.")
+        
+        # Find the selected genre script
+        selected_script_data = None
+        for script_data in genre_scripts:
+            if script_data.get('genre') == selected_genre:
+                selected_script_data = script_data
+                break
+        
+        if not selected_script_data:
+            raise HTTPException(status_code=404, detail=f"Genre script '{selected_genre}' not found")
+        
+        # Update validation with selected genre and set as full_script
+        success = await validation_service.update_validation_status(
+            validation_id=UUID(validation_id),
+            status='pending',
+            workflow_step='script_generation',
+            selected_genre_script=selected_genre,
+            full_script=selected_script_data.get('script', '')
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to select genre script")
+        
+        print(f"✅ [SCRIPT] Selected genre script: {selected_genre} for validation {validation_id}")
+        
+        return {
+            "success": True,
+            "message": f"Selected {selected_genre} script successfully",
+            "selected_genre": selected_genre
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error selecting genre script: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to select genre script: {str(e)}")
 
 
 @router.post("/validation/queue/{validation_id}/generate-shot-list")

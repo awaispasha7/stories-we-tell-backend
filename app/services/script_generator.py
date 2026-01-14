@@ -43,7 +43,8 @@ class ScriptGenerator:
         synopsis: str,
         dossier_data: Dict[str, Any],
         project_id: str,
-        special_instructions: Optional[str] = None
+        special_instructions: Optional[str] = None,
+        genre: Optional[str] = None
     ) -> Optional[str]:
         """
         Generate a 500-800 word full script from synopsis and dossier data.
@@ -60,14 +61,17 @@ class ScriptGenerator:
         try:
             print(f"📝 [SCRIPT] Starting script generation for project {project_id}")
             
-            # Build script prompt from synopsis and dossier data
-            script_prompt = self._build_script_prompt(synopsis, dossier_data, special_instructions)
+            # Build script prompt from synopsis and dossier data (with genre-specific agent)
+            script_prompt = self._build_script_prompt(synopsis, dossier_data, special_instructions, genre)
             
             # Use GPT-4.1 as primary (flagship for deep text generation)
             # Pass max_tokens to ensure we get 500-800 words (approximately 2000-3200 tokens)
             print(f"📝 [SCRIPT] Calling AI model for script generation...")
             
             script = None
+            
+            # Get genre-specific system prompt if genre is provided
+            system_prompt = self._get_system_prompt(genre)
             
             if OPENAI_AVAILABLE:
                 try:
@@ -76,7 +80,7 @@ class ScriptGenerator:
                         messages=[
                             {
                                 "role": "system",
-                                "content": "You are a professional scriptwriter specializing in cinematic storytelling and video narration. Create engaging, emotionally resonant scripts that bring stories to life through narrative, dialogue, voice-over, and scene structure."
+                                "content": system_prompt
                             },
                             {
                                 "role": "user",
@@ -145,18 +149,33 @@ class ScriptGenerator:
             print(f"❌ [SCRIPT] Traceback: {traceback.format_exc()}")
             return None
     
+    def _get_system_prompt(self, genre: Optional[str] = None) -> str:
+        """Get genre-specific system prompt"""
+        if genre:
+            try:
+                from ..ai.genre_agents import genre_agents
+                return genre_agents.get_system_prompt(genre)
+            except Exception as e:
+                print(f"⚠️ [SCRIPT] Failed to get genre-specific prompt: {e}")
+        
+        # Default system prompt
+        return "You are a professional scriptwriter specializing in cinematic storytelling and video narration. Create engaging, emotionally resonant scripts that bring stories to life through narrative, dialogue, voice-over, and scene structure."
+    
     def _build_script_prompt(
         self,
         synopsis: str,
         dossier_data: Dict[str, Any],
-        special_instructions: Optional[str] = None
+        special_instructions: Optional[str] = None,
+        genre: Optional[str] = None
     ) -> str:
         """Build the prompt for script generation from synopsis and dossier data"""
         
         # Extract key information from dossier
         title = dossier_data.get('title', 'Untitled Story')
         logline = dossier_data.get('logline', '')
-        genre = dossier_data.get('genre', '')
+        dossier_genre = dossier_data.get('genre', '')
+        # Use provided genre parameter if available, otherwise fall back to dossier genre
+        final_genre = genre if genre else dossier_genre
         tone = dossier_data.get('tone', '')
         
         # Story Type & Perspective
@@ -175,7 +194,7 @@ SYNOPSIS:
 STORY CONTEXT:
 Title: {title}
 Logline: {logline}
-Genre: {genre}
+Genre: {final_genre}
 Tone: {tone}
 Story Type: {story_type}
 Perspective: {perspective}
@@ -202,6 +221,13 @@ Structure the script with clear scene breaks. For each scene, include:
 - Emotional beats and pacing notes
 
 Write the complete script now, ensuring you reach at least 500 words:"""
+        
+        # Add genre-specific guidance if genre is provided
+        if final_genre:
+            prompt += f"""
+
+GENRE-SPECIFIC GUIDANCE:
+This script should be written in the {final_genre} genre. Please ensure the script reflects the conventions, tone, and style appropriate for this genre."""
         
         # Add special instructions if provided
         if special_instructions and special_instructions.strip():

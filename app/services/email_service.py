@@ -856,6 +856,22 @@ class EmailService:
         try:
             story_title = dossier_data.get('title', 'Your Story')
             
+            # Get genre predictions for email
+            genre_predictions = dossier_data.get('genre_predictions', [])
+            genre_predictions_html = ""
+            if genre_predictions:
+                genre_predictions_html = "<div style='margin: 20px 0; padding: 15px; background: #f0f4ff; border-radius: 8px; border-left: 4px solid #667eea;'>"
+                genre_predictions_html += "<h3 style='margin: 0 0 10px 0; color: #333; font-size: 16px;'>🎭 Detected Genres (with confidence):</h3>"
+                genre_predictions_html += "<ul style='margin: 0; padding-left: 20px;'>"
+                for pred in genre_predictions[:5]:  # Top 5
+                    genre = pred.get('genre', 'Unknown')
+                    confidence = pred.get('confidence', 0.0)
+                    percentage = int(confidence * 100)
+                    genre_predictions_html += f"<li style='margin: 5px 0; color: #555;'><strong>{genre}</strong>: {percentage}%</li>"
+                genre_predictions_html += "</ul>"
+                genre_predictions_html += "<p style='margin: 10px 0 0 0; font-size: 13px; color: #666;'>Click the 'Set Genre' button below to select your preferred genre.</p>"
+                genre_predictions_html += "</div>"
+            
             # Build checklist status
             checklist_mapping = {
                 'emotional_tone': 'Emotional Tone',
@@ -972,6 +988,8 @@ class EmailService:
                             <h3 style="margin-top: 0; color: #4F46E5;">Story Synopsis</h3>
                             <div class="synopsis-text">{synopsis}</div>
                         </div>
+                        
+                        {genre_predictions_html}
                         
                         <div class="checklist">
                             <h3>Review Checklist</h3>

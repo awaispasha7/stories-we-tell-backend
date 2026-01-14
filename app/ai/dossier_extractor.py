@@ -281,6 +281,17 @@ Respond ONLY with valid JSON in this exact format:
             
             print(f"✅ Extracted metadata: {metadata}")
             
+            # Extract early genre hints using genre detector
+            try:
+                from ..services.genre_detector import genre_detector
+                early_genre_hints = genre_detector.detect_early_hints(metadata)
+                if early_genre_hints:
+                    metadata["genre_predictions"] = early_genre_hints
+                    print(f"🎭 [GENRE] Extracted {len(early_genre_hints)} early genre hints")
+            except Exception as e:
+                print(f"⚠️ [GENRE] Failed to extract early genre hints: {e}")
+                # Continue without genre hints
+
             return metadata
             
         except Exception as e:
@@ -310,7 +321,8 @@ Respond ONLY with valid JSON in this exact format:
                 "title": "Untitled Story",
                 "logline": "",
                 "characters": [],
-                "scenes": []
+                "scenes": [],
+                "genre_predictions": []  # Empty early hints on error
             }
 
 

@@ -77,6 +77,23 @@ class SynopsisGenerator:
                 if last_char not in ['.', '!', '?', '"', "'"]:
                     print(f"⚠️ [SYNOPSIS] Response may be incomplete - ends with: '{last_char}'")
             
+            # Stage 2: Refine genre predictions from synopsis
+            try:
+                from .genre_detector import genre_detector
+                early_hints = dossier_data.get('genre_predictions', [])
+                refined_genres = await genre_detector.refine_from_synopsis(
+                    synopsis=synopsis,
+                    dossier_data=dossier_data,
+                    early_hints=early_hints if early_hints else None
+                )
+                if refined_genres:
+                    # Update dossier_data with refined genres (caller should persist this)
+                    dossier_data['genre_predictions'] = refined_genres
+                    print(f"🎭 [GENRE] Refined genre predictions after synopsis generation")
+            except Exception as e:
+                print(f"⚠️ [GENRE] Failed to refine genre predictions: {e}")
+                # Continue without genre refinement
+            
             return synopsis
             
         except Exception as e:

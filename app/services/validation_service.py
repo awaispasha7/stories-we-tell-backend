@@ -126,7 +126,9 @@ class ValidationService:
         synopsis_review_notes: Optional[str] = None,
         synopsis_checklist: Optional[Dict[str, Any]] = None,
         full_script: Optional[str] = None,
-        shot_list: Optional[Dict[str, Any]] = None
+        shot_list: Optional[Dict[str, Any]] = None,
+        genre_scripts: Optional[List[Dict[str, Any]]] = None,
+        selected_genre_script: Optional[str] = None
     ) -> bool:
         """Update validation request status and review information."""
         try:
@@ -183,6 +185,12 @@ class ValidationService:
             
             if shot_list is not None:
                 update_data['shot_list'] = shot_list
+            
+            if genre_scripts is not None:
+                update_data['genre_scripts'] = genre_scripts
+            
+            if selected_genre_script is not None:
+                update_data['selected_genre_script'] = selected_genre_script
             
             result = self.supabase.table('validation_queue').update(
                 update_data

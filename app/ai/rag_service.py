@@ -37,7 +37,8 @@ class RAGService:
         user_message: str,
         user_id: UUID,
         project_id: Optional[UUID] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        genre: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Get RAG context for a user message
@@ -71,13 +72,14 @@ class RAGService:
             
             query_embedding = await self._get_embedding_service().generate_query_embedding(query_text)
             
-            # Step 2: Retrieve user-specific context
+            # Step 2: Retrieve user-specific context (with genre filtering if specified)
             user_context = await self.vector_storage.get_similar_user_messages(
                 query_embedding=query_embedding,
                 user_id=user_id,
                 project_id=project_id,
                 match_count=self.user_match_count,
-                similarity_threshold=self.similarity_threshold
+                similarity_threshold=self.similarity_threshold,
+                genre=genre
             )
             
             # Step 3: Retrieve global knowledge patterns
@@ -108,14 +110,15 @@ class RAGService:
             except Exception as e:
                 print(f"🔍 RAG Debug: Error checking embeddings: {e}")
             
-            # Step 4: Retrieve document context (search across all projects for user)
+            # Step 4: Retrieve document context (search across all projects for user, with genre filtering)
             print(f"🔍 RAG: Calling get_document_context with user_id: {user_id} (type: {type(user_id)})")
             document_context = await document_processor.get_document_context(
                 query_embedding=query_embedding,
                 user_id=user_id,
                 project_id=None,  # Search across all projects for this user
                 match_count=self.document_match_count,
-                similarity_threshold=self.similarity_threshold
+                similarity_threshold=self.similarity_threshold,
+                genre=genre
             )
             
             # Step 5: Build combined context text for LLM prompt
@@ -217,7 +220,8 @@ class RAGService:
         session_id: UUID,
         content: str,
         role: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        genre: Optional[str] = None
     ) -> bool:
         """
         Generate and store embedding for a message
@@ -238,7 +242,7 @@ class RAGService:
             # Generate embedding
             embedding = await self._get_embedding_service().generate_embedding(content)
             
-            # Store embedding
+            # Store embedding (with genre if provided)
             embedding_id = await self.vector_storage.store_message_embedding(
                 message_id=message_id,
                 user_id=user_id,
@@ -247,7 +251,8 @@ class RAGService:
                 embedding=embedding,
                 content=content,
                 role=role,
-                metadata=metadata
+                metadata=metadata,
+                genre=genre
             )
             
             return embedding_id is not None

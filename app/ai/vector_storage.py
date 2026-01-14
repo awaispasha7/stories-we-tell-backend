@@ -24,7 +24,8 @@ class VectorStorageService:
         embedding: List[float],
         content: str,
         role: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        genre: Optional[str] = None
     ) -> Optional[UUID]:
         """
         Store embedding for a chat message
@@ -46,6 +47,11 @@ class VectorStorageService:
             # Truncate content for snippet
             content_snippet = content[:500] if len(content) > 500 else content
             
+            # Add genre to metadata if provided
+            final_metadata = metadata or {}
+            if genre:
+                final_metadata["genre"] = genre
+            
             embedding_data = {
                 "embedding_id": str(uuid4()),
                 "message_id": str(message_id),
@@ -55,7 +61,7 @@ class VectorStorageService:
                 "embedding": embedding,
                 "content_snippet": content_snippet,
                 "role": role,
-                "metadata": metadata or {},
+                "metadata": final_metadata,
                 "created_at": datetime.now().isoformat()
             }
             
@@ -78,7 +84,8 @@ class VectorStorageService:
         user_id: UUID,
         project_id: Optional[UUID] = None,
         match_count: int = 10,
-        similarity_threshold: float = 0.7
+        similarity_threshold: float = 0.7,
+        genre: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Retrieve similar messages for a user using vector similarity search
@@ -107,7 +114,19 @@ class VectorStorageService:
             ).execute()
             
             if result.data:
-                print(f"SUCCESS: Found {len(result.data)} similar user messages")
+                # Filter by genre if specified
+                if genre:
+                    filtered_data = []
+                    for message in result.data:
+                        msg_metadata = message.get('metadata', {})
+                        msg_genre = msg_metadata.get('genre') if isinstance(msg_metadata, dict) else None
+                        if msg_genre == genre:
+                            filtered_data.append(message)
+                    result.data = filtered_data
+                    print(f"SUCCESS: Found {len(result.data)} similar user messages (filtered by genre: {genre})")
+                else:
+                    print(f"SUCCESS: Found {len(result.data)} similar user messages")
+                
                 # Debug: Check user isolation
                 for message in result.data:
                     msg_user_id = message.get('user_id')
@@ -271,7 +290,8 @@ class VectorStorageService:
         chunk_index: int,
         chunk_text: str,
         embedding: List[float],
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        genre: Optional[str] = None
     ) -> Optional[UUID]:
         """
         Store embedding for a document chunk
@@ -290,6 +310,11 @@ class VectorStorageService:
             ID of the created embedding record
         """
         try:
+            # Add genre to metadata if provided
+            final_metadata = metadata or {}
+            if genre:
+                final_metadata["genre"] = genre
+            
             embedding_data = {
                 "embedding_id": str(uuid4()),
                 "asset_id": str(asset_id),
@@ -299,7 +324,7 @@ class VectorStorageService:
                 "chunk_index": chunk_index,
                 "chunk_text": chunk_text,
                 "embedding": embedding,
-                "metadata": metadata or {},
+                "metadata": final_metadata,
                 "created_at": datetime.now().isoformat()
             }
             

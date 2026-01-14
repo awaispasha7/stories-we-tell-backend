@@ -310,7 +310,8 @@ class DocumentProcessor:
         user_id: UUID,
         project_id: Optional[UUID] = None,
         match_count: int = 5,
-        similarity_threshold: float = 0.7
+        similarity_threshold: float = 0.7,
+        genre: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Retrieve relevant document chunks for RAG context
@@ -369,7 +370,19 @@ class DocumentProcessor:
             print(f"🔍 DocumentProcessor: Result data: {result.data}")
             
             if result.data:
-                print(f"📚 Found {len(result.data)} relevant document chunks")
+                # Filter by genre if specified
+                if genre:
+                    filtered_data = []
+                    for chunk in result.data:
+                        chunk_metadata = chunk.get('metadata', {})
+                        chunk_genre = chunk_metadata.get('genre') if isinstance(chunk_metadata, dict) else None
+                        if chunk_genre == genre:
+                            filtered_data.append(chunk)
+                    result.data = filtered_data
+                    print(f"📚 Found {len(result.data)} relevant document chunks (filtered by genre: {genre})")
+                else:
+                    print(f"📚 Found {len(result.data)} relevant document chunks")
+                
                 # Debug: Check user isolation
                 for chunk in result.data:
                     chunk_user_id = chunk.get('user_id')
