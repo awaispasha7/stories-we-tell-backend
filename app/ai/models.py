@@ -19,11 +19,14 @@ except ImportError as e:
     OPENAI_AVAILABLE = False
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
     GEMINI_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Gemini not available: {e}")
     GEMINI_AVAILABLE = False
+    genai = None
+    genai_types = None
 
 try:
     import anthropic
@@ -51,8 +54,12 @@ class AIModelManager:
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 
         if gemini_key and gemini_key != "your_gemini_api_key_here":
-            genai.configure(api_key=gemini_key)
-            self.gemini_available = True
+            try:
+                self.gemini_client = genai.Client(api_key=gemini_key)
+                self.gemini_available = True
+            except Exception as e:
+                print(f"Warning: Failed to initialize Gemini client: {e}")
+                self.gemini_available = False
         else:
             self.gemini_available = False
 
@@ -630,46 +637,47 @@ class AIModelManager:
             gemini_succeeded = False
             if self.gemini_available:
                 # Use Gemini 2.5 Flash (best price-performance model)
+                # Note: Using new google.genai package (migrated from deprecated google.generativeai)
                 try:
-                    model = genai.GenerativeModel('gemini-2.5-flash')
                     print(f"📝 [AI] Generating with Gemini 2.5 Flash, max_output_tokens: {max_tokens}, is_synopsis: {is_synopsis}")
-                    response = model.generate_content(
-                        final_prompt,
-                        generation_config=genai.types.GenerationConfig(
+                    
+                    # Use new google.genai API with proper types
+                    # Reference: https://github.com/googleapis/python-genai
+                    response = self.gemini_client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=final_prompt,
+                        config=genai_types.GenerateContentConfig(
                             max_output_tokens=max_tokens,
                             temperature=temperature,
-                            stop_sequences=[]  # Don't stop early
-                        ),
-                        safety_settings=[
-                            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-                        ]
+                        )
                     )
                     
-                    # Get full response text - handle both single and multi-part responses
-                    if hasattr(response, 'candidates') and response.candidates:
-                        # Get text from all parts of the first candidate
-                        response_text = ""
-                        for part in response.candidates[0].content.parts:
-                            if hasattr(part, 'text'):
-                                response_text += part.text
-                    else:
-                        response_text = response.text
+                    # Get response text - new API returns text directly
+                    response_text = response.text
                     
                     word_count = len(response_text.split())
-                    print(f"📝 [AI] Gemini 2.5 Flash response: {word_count} words, tokens: {response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 'unknown'}")
+                    print(f"📝 [AI] Gemini 2.5 Flash response: {word_count} words")
                     if word_count < 400 and is_synopsis:
                         print(f"⚠️ [AI] WARNING: Synopsis response is too short! May be truncated.")
+
+                    # Try to get token count if available (new API structure)
+                    tokens_used = 0
+                    if hasattr(response, 'usage_metadata'):
+                        usage = response.usage_metadata
+                        if hasattr(usage, 'total_token_count'):
+                            tokens_used = usage.total_token_count
+                        elif hasattr(usage, 'prompt_token_count') and hasattr(usage, 'candidates_token_count'):
+                            tokens_used = usage.prompt_token_count + usage.candidates_token_count
 
                     return {
                         "response": response_text,
                         "model_used": "gemini-2.5-flash",
-                        "tokens_used": response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
+                        "tokens_used": tokens_used
                     }
                 except Exception as e:
                     print(f"⚠️ Gemini 2.5 Flash failed: {e}")
+                    import traceback
+                    print(f"⚠️ Traceback: {traceback.format_exc()}")
                     print(f"⚠️ Falling back to GPT for description generation")
                     # Mark that Gemini failed, fall through to GPT fallback
                     gemini_succeeded = False
