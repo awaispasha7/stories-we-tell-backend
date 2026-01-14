@@ -180,11 +180,15 @@ async def approve_validation_by_queue(
         if not validation:
             raise HTTPException(status_code=404, detail="Validation request not found")
         
-        # Send to client using existing email service
-        email_service = EmailService()
-        if email_service.available and validation.get('client_email'):
-            try:
-                # Get dossier data for the project
+        # Send approval notification email to all admins
+        email_sent = False
+        email_error = None
+        try:
+            from ..services.email_service import EmailService
+            email_service = EmailService()
+            
+            if email_service.available:
+                # Get dossier data for email
                 from ..database.session_service_supabase import session_service
                 dossier = session_service.get_dossier(
                     UUID(validation['project_id']), 
@@ -192,40 +196,45 @@ async def approve_validation_by_queue(
                 )
                 dossier_data = dossier.snapshot_json if dossier else {}
                 
-                success = await email_service.send_story_captured_email(
-                    user_email=validation['client_email'],
-                    user_name=validation['client_name'] or "Writer",
-                    story_data=dossier_data,
-                    generated_script=validation['generated_script'],
-                    project_id=validation['project_id'],
-                    client_emails=None
-                )
+                # Get internal team emails
+                import os
+                internal_emails_str = os.getenv("CLIENT_EMAIL", "")
+                internal_emails = [email.strip() for email in internal_emails_str.split(",") if email.strip()]
                 
-                if success:
-                    # Mark as sent to client
-                    await validation_service.mark_sent_to_client(UUID(validation_id))
-                    
-                    return {
-                        "success": True,
-                        "message": "Validation approved and sent to client"
-                    }
+                if internal_emails:
+                    # Send approval notification email to admins
+                    email_sent = await email_service.send_validation_approval_notification(
+                        internal_emails=internal_emails,
+                        project_id=str(validation['project_id']),
+                        validation_id=validation_id,
+                        story_data=dossier_data,
+                        reviewed_by=reviewed_by,
+                        review_notes=review_notes
+                    )
+                    if email_sent:
+                        print(f"✅ [APPROVAL] Approval notification email sent to {len(internal_emails)} admins")
+                    else:
+                        print(f"⚠️ [APPROVAL] Approval notification email failed to send")
                 else:
-                    return {
-                        "success": True,
-                        "message": "Validation approved but email failed to send"
-                    }
-                    
-            except Exception as e:
-                print(f"❌ Error sending client email: {e}")
-                return {
-                    "success": True,
-                    "message": "Validation approved but email failed to send"
-                }
-        else:
-            return {
-                "success": True,
-                "message": "Validation approved (no client email to send)"
-            }
+                    print(f"⚠️ [APPROVAL] No internal emails configured (CLIENT_EMAIL env var is empty)")
+        except Exception as e:
+            email_error = str(e)
+            print(f"❌ [APPROVAL] Error sending approval email: {email_error}")
+            import traceback
+            print(f"❌ [APPROVAL] Traceback: {traceback.format_exc()}")
+            # Don't fail the whole request if email fails
+        
+        # NOTE: Client emails are only sent when:
+        # 1. Story needs missing information (needs_revision=True) - handled in send_review endpoint
+        # 2. Story is complete (final approval) - handled separately
+        # All workflow updates go to admins only
+        
+        return {
+            "success": True,
+            "message": "Validation approved",
+            "email_sent": email_sent,
+            "email_error": email_error
+        }
         
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid validation ID format")
@@ -250,11 +259,15 @@ async def approve_validation(
         if not validation:
             raise HTTPException(status_code=404, detail="Validation request not found")
         
-        # Send to client using existing email service
-        email_service = EmailService()
-        if email_service.available and validation.get('client_email'):
-            try:
-                # Get dossier data for the project
+        # Send approval notification email to all admins
+        email_sent = False
+        email_error = None
+        try:
+            from ..services.email_service import EmailService
+            email_service = EmailService()
+            
+            if email_service.available:
+                # Get dossier data for email
                 from ..database.session_service_supabase import session_service
                 dossier = session_service.get_dossier(
                     UUID(validation['project_id']), 
@@ -262,46 +275,46 @@ async def approve_validation(
                 )
                 dossier_data = dossier.snapshot_json if dossier else {}
                 
-                success = await email_service.send_story_captured_email(
-                    user_email=validation['client_email'],
-                    user_name=validation['client_name'] or "Writer",
-                    story_data=dossier_data,
-                    generated_script=validation['generated_script'],
-                    project_id=validation['project_id'],
-                    client_emails=None
-                )
+                # Get internal team emails
+                import os
+                internal_emails_str = os.getenv("CLIENT_EMAIL", "")
+                internal_emails = [email.strip() for email in internal_emails_str.split(",") if email.strip()]
                 
-                if success:
-                    # Mark as sent to client
-                    await validation_service.mark_sent_to_client(UUID(validation_id))
-                    
-                    return {
-                        "success": True,
-                        "message": "Validation approved and sent to client",
-                        "validation": validation
-                    }
+                if internal_emails:
+                    # Send approval notification email to admins
+                    email_sent = await email_service.send_validation_approval_notification(
+                        internal_emails=internal_emails,
+                        project_id=str(validation['project_id']),
+                        validation_id=validation_id,
+                        story_data=dossier_data,
+                        reviewed_by=request.reviewed_by,
+                        review_notes=request.review_notes
+                    )
+                    if email_sent:
+                        print(f"✅ [APPROVAL] Approval notification email sent to {len(internal_emails)} admins")
+                    else:
+                        print(f"⚠️ [APPROVAL] Approval notification email failed to send")
                 else:
-                    return {
-                        "success": True,
-                        "message": "Validation approved but email failed to send",
-                        "validation": validation,
-                        "email_sent": False
-                    }
-                    
-            except Exception as e:
-                print(f"❌ Error sending client email: {e}")
-                return {
-                    "success": True,
-                    "message": "Validation approved but email failed to send",
-                    "validation": validation,
-                    "email_error": str(e)
-                }
-        else:
-            return {
-                "success": True,
-                "message": "Validation approved (no client email to send)",
-                "validation": validation
-            }
+                    print(f"⚠️ [APPROVAL] No internal emails configured (CLIENT_EMAIL env var is empty)")
+        except Exception as e:
+            email_error = str(e)
+            print(f"❌ [APPROVAL] Error sending approval email: {email_error}")
+            import traceback
+            print(f"❌ [APPROVAL] Traceback: {traceback.format_exc()}")
+            # Don't fail the whole request if email fails
+        
+        # NOTE: Client emails are only sent when:
+        # 1. Story needs missing information (needs_revision=True) - handled in send_review endpoint
+        # 2. Story is complete (final approval) - handled separately
+        # All workflow updates go to admins only
+        
+        return {
+            "success": True,
+            "message": "Validation approved",
+            "validation": validation,
+            "email_sent": email_sent,
+            "email_error": email_error
+        }
         
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid validation ID format")
@@ -533,6 +546,40 @@ async def send_review(
                             flagged_issues[issue_type] = issues
                 
                 auto_question = get_user_friendly_question(unchecked_items, flagged_issues if flagged_issues else None)
+                
+                # Send email to client notifying them that missing information is needed
+                client_email = validation.get('client_email')
+                client_name = validation.get('client_name')
+                if client_email:
+                    try:
+                        from ..services.email_service import EmailService
+                        client_email_service = EmailService()
+                        
+                        if client_email_service.available:
+                            # Get dossier data for email
+                            from ..database.session_service_supabase import session_service
+                            dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
+                            dossier_data = dossier.snapshot_json if dossier else {}
+                            
+                            # Send revision request email to client
+                            revision_email_sent = await client_email_service.send_revision_request_email(
+                                user_email=client_email,
+                                user_name=client_name or "Writer",
+                                project_id=str(project_id),
+                                story_data=dossier_data,
+                                missing_items=unchecked_items,
+                                flagged_issues=flagged_issues if flagged_issues else {}
+                            )
+                            
+                            if revision_email_sent:
+                                print(f"✅ [REVIEW] Revision request email sent to client: {client_email}")
+                            else:
+                                print(f"⚠️ [REVIEW] Failed to send revision request email to client")
+                    except Exception as email_error:
+                        print(f"⚠️ [REVIEW] Error sending revision request email: {email_error}")
+                        import traceback
+                        print(f"⚠️ [REVIEW] Traceback: {traceback.format_exc()}")
+                        # Don't fail the whole request if email fails
                 
                 # Add auto-question as assistant message to the most recent active session
                 if reopened_sessions and auto_question:
@@ -780,6 +827,7 @@ async def approve_synopsis(
                 dossier = session_service.get_dossier(UUID(project_id), UUID(user_id))
                 dossier_data = dossier.snapshot_json if dossier else {}
                 
+                # Send email to admins only
                 email_sent = await email_service.send_synopsis_approval(
                     client_email=client_email or 'N/A',  # For context in email, not recipient
                     client_name=client_name,
@@ -790,6 +838,7 @@ async def approve_synopsis(
                     checklist=checklist,
                     review_notes=review_notes
                 )
+                
                 if not email_sent:
                     email_error = "Email service returned False"
             except Exception as e:

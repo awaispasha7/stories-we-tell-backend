@@ -194,6 +194,9 @@ async def _queue_for_validation(
             )
         else:
             print("⚠️ Validation notification failed but request is stored in database")
+        
+        # NOTE: All workflow emails go to admins (client). 
+        # Story writer (user) only receives emails when missing information is needed (handled in send_review endpoint)
             
     except Exception as e:
         print(f"⚠️ Validation queue failed: {e}")
