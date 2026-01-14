@@ -201,7 +201,8 @@ class EmailService:
         story_data: Dict[str, Any],
         generated_script: str,
         project_id: str,
-        client_emails: Optional[List[str]] = None
+        client_emails: Optional[List[str]] = None,
+        genre_predictions: Optional[List[Dict[str, Any]]] = None
     ) -> bool:
         """
         Send email notification when story is captured
@@ -210,8 +211,10 @@ class EmailService:
             user_email: User's email address
             user_name: User's name
             story_data: Captured story data from dossier
-            generated_script: Generated video script
+            generated_script: Generated video script (kept for backward compatibility, not displayed)
             project_id: Project ID for reference
+            client_emails: Optional list of CC emails
+            genre_predictions: Optional list of genre predictions with confidence scores
             
         Returns:
             bool: True if email sent successfully
@@ -227,13 +230,18 @@ class EmailService:
             # Create story summary
             story_summary = self._build_story_summary(story_data)
             
-            # Create email HTML content
+            # Get genre predictions from story_data if not provided
+            if not genre_predictions and story_data:
+                genre_predictions = story_data.get('genre_predictions')
+            
+            # Create email HTML content (generated_script is not displayed in email)
             html_content = self._build_email_html(
                 user_name=user_name,
                 story_data=story_data,
                 story_summary=story_summary,
-                generated_script=generated_script,
-                project_id=project_id
+                generated_script=generated_script,  # Kept for backward compatibility but not used
+                project_id=project_id,
+                genre_predictions=genre_predictions
             )
             
             # Prepare CC emails (use provided client_emails or fallback to CLIENT_EMAIL env var)
@@ -295,65 +303,104 @@ class EmailService:
             # Build validation request email
             subject = f"Story Validation Required - {story_data.get('title', 'Untitled Story')}"
             
-            # Create validation HTML content
+            # Create validation HTML content - Updated for multi-step validation workflow
             validation_html = f"""
             <!DOCTYPE html>
             <html>
             <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }}
                     .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
-                    .content {{ padding: 20px; }}
-                    .highlight {{ background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; margin: 20px 0; }}
-                    .script-section {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-                    .transcript-section {{ background: #e9ecef; padding: 20px; border-radius: 8px; margin: 20px 0; max-height: 400px; overflow-y: auto; }}
-                    .action-buttons {{ text-align: center; margin: 30px 0; }}
-                    .approve-btn {{ background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 0 10px; }}
-                    .edit-btn {{ background: #ffc107; color: #212529; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 0 10px; }}
+                    .email-wrapper {{ background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }}
+                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }}
+                    .header h1 {{ margin: 0; font-size: 24px; }}
+                    .header p {{ margin: 10px 0 0 0; opacity: 0.9; }}
+                    .content {{ padding: 30px; }}
+                    .highlight {{ background: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107; margin: 20px 0; }}
+                    .info-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }}
+                    .info-item {{ padding: 10px; background: #f8f9fa; border-radius: 6px; }}
+                    .info-label {{ font-weight: 600; color: #666; font-size: 12px; text-transform: uppercase; margin-bottom: 5px; }}
+                    .info-value {{ color: #333; font-size: 14px; }}
+                    .action-button {{ display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; text-align: center; }}
+                    .action-button:hover {{ opacity: 0.9; }}
+                    .workflow-steps {{ background: #f0f4ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }}
+                    .workflow-steps h3 {{ margin-top: 0; color: #667eea; }}
+                    .workflow-steps ol {{ margin: 10px 0; padding-left: 20px; }}
+                    .workflow-steps li {{ margin: 8px 0; color: #555; }}
+                    .footer {{ text-align: center; padding: 20px; color: #666; font-size: 14px; border-top: 1px solid #e5e7eb; }}
+                    @media only screen and (max-width: 600px) {{
+                        .container {{ padding: 10px; }}
+                        .content {{ padding: 20px; }}
+                        .info-grid {{ grid-template-columns: 1fr; }}
+                        .action-button {{ display: block; width: 100%; box-sizing: border-box; }}
+                    }}
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <div class="header">
-                        <h1>🔍 Story Validation Request</h1>
-                        <p>A completed story requires validation before client delivery</p>
-                    </div>
-                    
-                    <div class="content">
-                        <div class="highlight">
-                            <strong>Project ID:</strong> {project_id}<br>
-                            <strong>Client:</strong> {client_name or 'Anonymous'} ({client_email or 'No email'})<br>
-                            <strong>Story Title:</strong> {story_data.get('title', 'Untitled Story')}
+                    <div class="email-wrapper">
+                        <div class="header">
+                            <h1>📋 New Story Validation Request</h1>
+                            <p>A completed story has been submitted and requires validation</p>
                         </div>
                         
-                        <h2>📋 Action Required</h2>
-                        <p>Please review the conversation transcript and generated script below. Once validated:</p>
-                        <ol>
-                            <li><strong>Approve</strong> - Send as-is to client</li>
-                            <li><strong>Edit</strong> - Modify script then send to client</li>
-                        </ol>
-                        
-                        <div class="action-buttons">
-                            <a href="{self.frontend_url}/admin/validate/{validation_id or project_id}?action=approve" class="approve-btn">✅ Approve & Send</a>
-                            <a href="{self.frontend_url}/admin/validate/{validation_id or project_id}?action=edit" class="edit-btn">✏️ Edit Script</a>
+                        <div class="content">
+                            <div class="highlight">
+                                <div class="info-grid">
+                                    <div class="info-item">
+                                        <div class="info-label">Project ID</div>
+                                        <div class="info-value">{project_id}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-label">Validation ID</div>
+                                        <div class="info-value">{validation_id or 'N/A'}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-label">Client Name</div>
+                                        <div class="info-value">{client_name or 'Anonymous'}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-label">Client Email</div>
+                                        <div class="info-value">{client_email or 'No email provided'}</div>
+                                    </div>
+                                </div>
+                                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ffc107;">
+                                    <div class="info-label">Story Title</div>
+                                    <div class="info-value" style="font-size: 18px; font-weight: 600; color: #333;">{story_data.get('title', 'Untitled Story')}</div>
+                                </div>
+                            </div>
+                            
+                            <div class="workflow-steps">
+                                <h3>📝 Validation Workflow</h3>
+                                <p style="margin-bottom: 15px; color: #555;">This story will go through the following validation steps:</p>
+                                <ol>
+                                    <li><strong>Step 9 - Dossier Review:</strong> Review story completeness, character logic, photos, timeline, setting, tone, and perspective</li>
+                                    <li><strong>Step 10 - Synopsis Generation:</strong> Generate a comprehensive synopsis (500-800 words)</li>
+                                    <li><strong>Step 11 - Synopsis Review:</strong> Review and approve the synopsis</li>
+                                    <li><strong>Step 12 - Script Generation:</strong> Generate multiple genre-specific scripts (user selects preferred genre)</li>
+                                    <li><strong>Step 13 - Shot List Creation:</strong> Create detailed shot list from selected script</li>
+                                    <li><strong>Step 14+ - Final Review & Delivery:</strong> Complete final review and deliver to client</li>
+                                </ol>
+                            </div>
+                            
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="{self.frontend_url}/admin/validate/{validation_id or project_id}" class="action-button" style="color: white !important; text-decoration: none;">
+                                    🔍 Review Story in Admin Panel
+                                </a>
+                            </div>
+                            
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                                <p style="margin: 0; color: #666; font-size: 14px;">
+                                    <strong>Note:</strong> The validation process includes multiple review steps. Use the admin panel to navigate through each step and complete the validation workflow.
+                                </p>
+                            </div>
                         </div>
                         
-                        <h2>💬 Conversation Transcript</h2>
-                        <div class="transcript-section">
-                            <pre>{transcript}</pre>
-                        </div>
-                        
-                        <h2>🎥 Generated Video Script</h2>
-                        <div class="script-section">
-                            <pre>{generated_script}</pre>
-                        </div>
-                        
-                        <div class="highlight">
-                            <strong>Next Steps:</strong><br>
-                            • Review transcript for story completeness<br>
-                            • Validate script accuracy and quality<br>
-                            • Approve or edit before client delivery
+                        <div class="footer">
+                            <p>This is an automated notification from Stories We Tell</p>
+                            <p>© 2026 Stories We Tell. All rights reserved.</p>
                         </div>
                     </div>
                 </div>
@@ -735,9 +782,34 @@ class EmailService:
         story_data: Dict[str, Any],
         story_summary: str,
         generated_script: str,
-        project_id: str
+        project_id: str,
+        genre_predictions: Optional[List[Dict[str, Any]]] = None
     ) -> str:
-        """Build HTML email content"""
+        """Build HTML email content - Note: generated_script parameter is kept for backward compatibility but not displayed"""
+        
+        # Build genre predictions HTML if available
+        genre_predictions_html = ""
+        if genre_predictions:
+            genre_predictions_html = """
+            <div style="background: #e0f7fa; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #00bcd4;">
+                <h3 style="margin-top: 0; color: #00838f;">Detected Genres</h3>
+                <p style="margin-bottom: 10px; font-size: 14px; color: #333;">Based on your story, here are the top predicted genres:</p>
+                <ul style="list-style: none; padding: 0; margin: 0;">
+            """
+            for gp in genre_predictions:
+                genre_name = gp.get('genre', 'Unknown')
+                confidence = gp.get('confidence', 0.0)
+                genre_predictions_html += f"""
+                    <li style="padding: 5px 0; font-size: 15px; color: #333;">
+                        <strong>{genre_name}:</strong> {confidence:.0%}
+                    </li>
+                """
+            genre_predictions_html += """
+                </ul>
+                <p style="margin: 10px 0 0 0; font-size: 13px; color: #666;">Click the 'Set Genre' button below to select your preferred genre.</p>
+            </div>
+            """
+        
         return f"""
         <!DOCTYPE html>
         <html>
@@ -759,9 +831,10 @@ class EmailService:
                 .email-button.secondary {{ background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); color: white !important; }}
                 .email-button:hover {{ opacity: 0.9; color: white !important; }}
                 @media only screen and (max-width: 600px) {{
-                    .container {{ padding: 10px; }}
+                    .container {{ padding: 10px; width: 100% !important; max-width: 100% !important; }}
                     .content {{ padding: 20px; }}
-                    .email-button {{ display: block; width: 100%; margin: 10px 0; min-width: auto; }}
+                    .button-container {{ margin: 20px 0; text-align: center; }}
+                    .email-button {{ display: block; width: 100% !important; margin: 10px 0 !important; min-width: auto !important; max-width: 100% !important; box-sizing: border-box !important; }}
                     h1 {{ font-size: 24px; }}
                     h2 {{ font-size: 20px; }}
                 }}
@@ -783,13 +856,15 @@ class EmailService:
                         <strong>Story Title:</strong> {story_data.get('title', 'Untitled Story')}
                     </div>
                     
+                    {genre_predictions_html}
+                    
                     <p>Your story is now in our system and ready for the next steps. We'd love for you to review it and help us categorize it by selecting a genre.</p>
                     
                     <p style="font-size: 14px; color: #666; margin: 12px 0;">Our featured genres include: <strong>Historic Romance</strong>, <strong>Family Saga</strong>, <strong>Childhood Adventure</strong>, <strong>Documentary</strong>, and <strong>Historical Epic</strong>. You can also choose from other genre options or enter a custom genre.</p>
                     
                     <div class="button-container">
-                        <a href="{self.frontend_url}/chat?projectId={project_id}" class="email-button" style="color: white !important; text-decoration: none;">View Story in Dashboard</a>
-                        <a href="{self.frontend_url}/chat?setGenre=true&projectId={project_id}" class="email-button secondary" style="color: white !important; text-decoration: none;">Set Genre</a>
+                        <a href="{self.frontend_url}/chat?projectId={project_id}" class="email-button" style="color: white !important; text-decoration: none; display: inline-block;">View Story in Dashboard</a>
+                        <a href="{self.frontend_url}/chat?setGenre=true&projectId={project_id}" class="email-button secondary" style="color: white !important; text-decoration: none; display: inline-block;">Set Genre</a>
                     </div>
                     
                     <p>Thank you for trusting us with your story. We can't wait to help bring it to life!</p>

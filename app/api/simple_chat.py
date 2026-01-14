@@ -914,6 +914,22 @@ async def chat(
                             is_complete = user_completion or assistant_completion
                             print(f"🔍 [COMPLETION CHECK] User completion: {user_completion}, Assistant completion: {assistant_completion}, Final: {is_complete}")
                         
+                        # Check if story was reopened for revision - if so, check if all requirements are now met
+                        story_was_reopened_for_revision = False
+                        validation_id_for_auto_lock = None
+                        if project_id:
+                            try:
+                                supabase = get_supabase_client()
+                                validation_result = supabase.table("validation_queue").select("validation_id, needs_revision, status").eq("project_id", str(project_id)).order("created_at", desc=True).limit(1).execute()
+                                if validation_result.data and len(validation_result.data) > 0:
+                                    validation = validation_result.data[0]
+                                    if validation.get("needs_revision", False):
+                                        story_was_reopened_for_revision = True
+                                        validation_id_for_auto_lock = validation.get("validation_id")
+                                        print(f"🔄 [AUTO-LOCK CHECK] Story was reopened for revision - checking if all requirements are now met")
+                            except Exception as auto_lock_check_error:
+                                print(f"⚠️ [AUTO-LOCK CHECK] Error checking revision status: {auto_lock_check_error}")
+                        
                         if is_complete:
                             print("✅ Story completion detected. Performing final dossier extraction and validation...")
                             
@@ -1046,6 +1062,8 @@ async def chat(
                                     if not final_metadata.get('perspective'):
                                         missing_fields.append("Story perspective")
                                     
+                                    # Note: story_was_reopened_for_revision and validation_id_for_auto_lock are already checked above
+                                    
                                     if missing_fields:
                                         print(f"⚠️ [VALIDATION] Story cannot be completed - missing required information: {', '.join(missing_fields)}")
                                         # Block completion and ask for missing information
@@ -1060,8 +1078,44 @@ async def chat(
                                         print(f"🔄 [VALIDATION] Completion blocked - requesting missing information from user")
                                     else:
                                         print("✅ [VALIDATION] All required information collected - proceeding with story completion")
+                                        
+                                        # CRITICAL: If story was reopened for revision and all missing fields are now filled, auto-lock it
+                                        if story_was_reopened_for_revision and validation_id_for_auto_lock:
+                                            print(f"🔒 [REVISION] All missing information provided - automatically locking story again")
+                                            try:
+                                                # Update validation to mark that revision is complete
+                                                from ..services.validation_service import validation_service
+                                                await validation_service.update_validation_status(
+                                                    validation_id=UUID(validation_id_for_auto_lock),
+                                                    needs_revision=False,
+                                                    status='pending'  # Reset to pending for re-review
+                                                )
+                                                print(f"✅ [REVISION] Updated validation {validation_id_for_auto_lock} - needs_revision=False")
+                                                
+                                                # Lock all sessions in the project
+                                                supabase = get_supabase_client()
+                                                lock_result = supabase.table("sessions").update({
+                                                    "story_completed": True,
+                                                    "is_active": False,
+                                                    "updated_at": datetime.now(timezone.utc).isoformat()
+                                                }).eq("project_id", str(project_id)).execute()
+                                                
+                                                print(f"🔒 [REVISION] Locked {len(lock_result.data) if lock_result.data else 0} sessions in project {project_id}")
+                                                
+                                                # Update response to indicate story is locked again
+                                                full_response = full_response.replace("we're almost done", "your story is complete")
+                                                full_response = full_response.replace("story almost complete", "story complete")
+                                                full_response += "\n\n✅ Perfect! I have all the information I need. Your story is now complete and locked for validation."
+                                                
+                                                # Set is_complete to True so it proceeds with completion flow
+                                                is_complete = True
+                                            except Exception as lock_error:
+                                                print(f"⚠️ [REVISION] Error auto-locking story: {lock_error}")
+                                                import traceback
+                                                print(f"⚠️ [REVISION] Traceback: {traceback.format_exc()}")
                                     
-                                    if is_complete:
+                                    # CRITICAL: Only proceed with completion if is_complete is True AND no missing fields
+                                    if is_complete and not missing_fields:
                                         # Update dossier with final comprehensive extraction
                                         dossier_update = DossierUpdate(snapshot_json=final_metadata)
                                         updated_dossier = session_service.update_dossier(
@@ -1167,7 +1221,8 @@ async def chat(
                                 import traceback
                                 print(f"❌ [VALIDATION] Traceback: {traceback.format_exc()}")
 
-                            # Mark session as completed and inactive
+                            # Mark session as completed and inactive ONLY if all requirements are met
+                            # (This code only runs if is_complete is True AND no missing_fields)
                             try:
                                 supabase = get_supabase_client()
                                 supabase.table("sessions").update({
@@ -1176,7 +1231,7 @@ async def chat(
                                     "is_active": False,
                                     "updated_at": datetime.now(timezone.utc).isoformat()
                                 }).eq("session_id", str(session_id)).execute()
-                                print(f"✅ [COMPLETION] Marked session {session_id} as completed")
+                                print(f"✅ [COMPLETION] Marked session {session_id} as completed (all requirements met)")
                                 
                                 # Get title options from final metadata
                                 title_options = final_metadata.get("_title_options", {}) if final_metadata else {}

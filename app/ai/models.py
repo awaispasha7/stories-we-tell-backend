@@ -307,7 +307,64 @@ class AIModelManager:
                 if dossier_context.get('title') and dossier_context.get('title') != 'Untitled Story':
                     dossier_info += f"Title: {dossier_context['title']}\n"
                 
-                print(f"📋 Including dossier context: {dossier_context.get('title', 'Untitled')} - {len([k for k, v in dossier_context.items() if v and v != 'Unknown'])} slots filled")
+                # MISSING INFORMATION CHECK - Help LLM identify what's missing
+                missing_info = []
+                
+                # Check heroes
+                heroes = dossier_context.get('heroes', [])
+                if not heroes or len(heroes) == 0:
+                    missing_info.append("At least one hero character (name, age, relationship, physical, personality)")
+                else:
+                    for idx, hero in enumerate(heroes, 1):
+                        hero_name = hero.get('name', f'Hero {idx}')
+                        if not hero.get('age_at_story') or hero.get('age_at_story') == 'Unknown':
+                            missing_info.append(f"{hero_name}'s age at the time of the story")
+                        if not hero.get('photo_url') or not hero.get('photo_url').strip():
+                            missing_info.append(f"Photo for {hero_name} (optional but helpful)")
+                
+                # Check supporting characters (optional, but if mentioned should have basic info)
+                supporting = dossier_context.get('supporting_characters', [])
+                for char in supporting:
+                    char_name = char.get('name', 'Supporting character')
+                    if not char.get('photo_url') or not char.get('photo_url').strip():
+                        missing_info.append(f"Photo for {char_name} (optional)")
+                
+                # Check setting
+                if not dossier_context.get('story_location') or dossier_context.get('story_location') == 'Unknown':
+                    missing_info.append("Story location (where does it take place?)")
+                if not dossier_context.get('story_timeframe') or dossier_context.get('story_timeframe') == 'Unknown':
+                    missing_info.append("Story timeframe (when does it take place?)")
+                
+                # Check story type
+                story_type = dossier_context.get('story_type', '').strip().lower()
+                if not story_type or story_type == 'other' or story_type == 'unknown':
+                    missing_info.append("Story type (romantic, childhood drama, fantasy, epic/legend, adventure, historic action, documentary tone, or other)")
+                
+                # Check audience & perspective
+                audience = dossier_context.get('audience', {})
+                if not isinstance(audience, dict) or not audience.get('who_will_see_first'):
+                    missing_info.append("Audience - who will see this first?")
+                if not isinstance(audience, dict) or not audience.get('desired_feeling'):
+                    missing_info.append("Desired feeling - what do you want them to feel?")
+                if not dossier_context.get('perspective') or dossier_context.get('perspective') == 'Unknown':
+                    missing_info.append("Story perspective (first_person, narrator_voice, legend_myth_tone, documentary_tone)")
+                
+                # Check story content
+                if not dossier_context.get('problem_statement') or dossier_context.get('problem_statement') == 'Unknown':
+                    missing_info.append("Problem statement (what's the main challenge?)")
+                if not dossier_context.get('actions_taken') or dossier_context.get('actions_taken') == 'Unknown':
+                    missing_info.append("Actions taken (what does the character do?)")
+                if not dossier_context.get('outcome') or dossier_context.get('outcome') == 'Unknown':
+                    missing_info.append("Story outcome (how does it end?)")
+                
+                # Add missing info section if there are missing fields
+                if missing_info:
+                    dossier_info += f"\n⚠️ MISSING INFORMATION (Ask for these naturally during conversation):\n"
+                    for item in missing_info:
+                        dossier_info += f"  - {item}\n"
+                    dossier_info += "\nIMPORTANT: Ask for missing information naturally and contextually. Don't ask all at once - weave questions into the conversation flow. Use friendly language like 'Quick question - what's [character name]'s age?' or 'Just to make sure I have everything - where does this story take place?'\n"
+                
+                print(f"📋 Including dossier context: {dossier_context.get('title', 'Untitled')} - {len([k for k, v in dossier_context.items() if v and v != 'Unknown'])} slots filled, {len(missing_info)} missing fields")
             
             # Get authentication status from kwargs
             is_authenticated = kwargs.get("is_authenticated", False)
@@ -412,10 +469,32 @@ class AIModelManager:
         - Example: "So [Character Name] faces this challenge. What does [Character Name] do to overcome it?"
         - NEVER ask "Who is he/she?" if character name is already established
 
+        PROACTIVE INFORMATION GATHERING (CRITICAL):
+        - BEFORE allowing story completion, you MUST check the dossier context for missing required information
+        - Required fields that MUST be collected before story completion:
+          * Heroes: name, age_at_story (CRITICAL - cannot be "Unknown" or empty), relationship_to_user, physical_descriptors, personality_traits
+          * Supporting Characters: name, role, description (if mentioned)
+          * Setting: story_location, story_timeframe (cannot be "Unknown")
+          * Story Type: story_type (must be explicitly chosen, not "other" unless user explicitly chooses it)
+          * Audience: who_will_see_first, desired_feeling (both required)
+          * Perspective: perspective (cannot be "Unknown")
+          * Story Content: problem_statement, actions_taken, outcome (all required)
+        - NATURALLY ask for missing information during the conversation, not just at the end
+        - When you notice missing information, ask about it contextually and naturally:
+          * Example: "I want to make sure I have all the details. What's Mira's age at the time of this story?"
+          * Example: "Quick question - do you have a photo of [character name]? It helps us visualize them better."
+          * Example: "Just to clarify - where exactly does this story take place?"
+        - Ask ONE missing piece at a time, naturally woven into the conversation flow
+        - Use friendly, conversational language - don't sound like a form
+        - If the user says "I don't know" or "not sure", acknowledge it and move on (mark as optional if appropriate)
+        - CRITICAL: Do NOT allow story completion if required fields are missing - ask for them first
+
         STORY COMPLETION DETECTION:
         - Look for phrases: "at the end", "finally", "in conclusion", "that's the story", "that's my story", "story complete", "i'm done", "finished", "that's all", "the end"
-        - When story seems complete, acknowledge and move to next phase
-        - Don't keep asking questions if story is finished
+        - When story seems complete, FIRST check if all required information is collected
+        - If required fields are missing, acknowledge the story content but say: "Before we wrap up, I just need a couple more details to complete your story dossier..."
+        - Then ask for the missing required information naturally
+        - Only proceed to completion when ALL required fields are filled
         - CRITICAL: Do NOT assume story is complete just because setup steps (characters, photos, setting) are done
         - The story content (problem, actions, outcome) must be collected before considering the story complete
         {auth_instructions}
