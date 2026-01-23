@@ -88,6 +88,13 @@ except Exception as e:
     print(f"ERROR: Error importing dev_test router: {e}")
     dev_test = None
 
+try:
+    from app.api import image_edit
+    print("SUCCESS: Image edit router imported")
+except Exception as e:
+    print(f"ERROR: Error importing image_edit router: {e}")
+    image_edit = None
+
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -175,6 +182,13 @@ if dev_test:
         print("SUCCESS: Dev test router included")
     except Exception as e:
         print(f"ERROR: Error including dev_test router: {e}")
+
+if image_edit:
+    try:
+        app.include_router(image_edit.router, prefix="/api/v1", tags=["image-edit"])
+        print("SUCCESS: Image edit router included")
+    except Exception as e:
+        print(f"ERROR: Error including image_edit router: {e}")
 
 # Add root route to handle 404 errors
 @app.get("/")
