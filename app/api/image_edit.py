@@ -8,6 +8,7 @@ from io import BytesIO
 from PIL import Image
 from app.database.supabase import get_supabase_client
 from dotenv import load_dotenv
+import re
 
 # Try to import Gemini
 try:
@@ -183,8 +184,33 @@ async def edit_image_with_gemini(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ [IMAGE EDIT] Error editing image: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to edit image: {str(e)}")
+        msg = str(e)
+        print(f"❌ [IMAGE EDIT] Error editing image: {msg}")
+
+        # Map Gemini quota/rate-limit errors to HTTP 429 so frontend can handle nicely.
+        # The google client often embeds retryDelay like "Please retry in 22.2s" or "retryDelay': '22s'".
+        is_quota = ("RESOURCE_EXHAUSTED" in msg) or ("429" in msg and "Too Many Requests" in msg) or ("Quota exceeded" in msg)
+        if is_quota:
+            retry_seconds: Optional[int] = None
+            # Try to parse "retryDelay': '22s'"
+            m = re.search(r"retryDelay'\s*:\s*'(\d+)s'", msg)
+            if m:
+                retry_seconds = int(m.group(1))
+            # Try to parse "retry in 22.219s"
+            if retry_seconds is None:
+                m2 = re.search(r"retry in\s+(\d+(?:\.\d+)?)s", msg, flags=re.IGNORECASE)
+                if m2:
+                    retry_seconds = int(float(m2.group(1)))
+
+            # Keep this message short and user-facing (frontend will display it as-is).
+            detail = {
+                "type": "quota_exceeded",
+                "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits",
+                "retry_after_seconds": retry_seconds,
+            }
+            raise HTTPException(status_code=429, detail=detail)
+
+        raise HTTPException(status_code=500, detail=f"Failed to edit image: {msg}")
 
 @router.post("/image-edit")
 async def edit_image(
@@ -195,6 +221,10 @@ async def edit_image(
     intensity: Optional[int] = Form(None),
     crop_ratio: Optional[str] = Form(None),
     rotate_angle: Optional[int] = Form(None),
+    crop_x: Optional[int] = Form(None),
+    crop_y: Optional[int] = Form(None),
+    crop_width: Optional[int] = Form(None),
+    crop_height: Optional[int] = Form(None),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
     x_project_id: Optional[str] = Header(None, alias="X-Project-ID"),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID")
@@ -248,66 +278,80 @@ async def edit_image(
             pil_image = pil_image.rotate(-rotate_angle, expand=True)
             print(f"✅ [IMAGE EDIT] Applied rotation: {rotate_angle}°")
         
-        elif edit_mode == 'crop' and crop_ratio is not None:
-            # Apply crop based on ratio
+        elif edit_mode == 'crop':
+            # Apply crop either via explicit crop box (preferred for interactive UI)
+            # or via ratio presets.
             width, height = pil_image.size
-            if crop_ratio == '1:1':
-                # Square crop (center)
-                size = min(width, height)
-                left = (width - size) // 2
-                top = (height - size) // 2
-                pil_image = pil_image.crop((left, top, left + size, top + size))
-                print(f"✅ [IMAGE EDIT] Applied crop: 1:1 (square)")
-            elif crop_ratio == '16:9':
-                # 16:9 crop
-                target_ratio = 16 / 9
-                if width / height > target_ratio:
-                    new_height = height
-                    new_width = int(height * target_ratio)
-                    left = (width - new_width) // 2
-                    pil_image = pil_image.crop((left, 0, left + new_width, new_height))
-                else:
-                    new_width = width
-                    new_height = int(width / target_ratio)
-                    top = (height - new_height) // 2
-                    pil_image = pil_image.crop((0, top, new_width, top + new_height))
-                print(f"✅ [IMAGE EDIT] Applied crop: 16:9")
-            elif crop_ratio == '4:3':
-                # 4:3 crop
-                target_ratio = 4 / 3
-                if width / height > target_ratio:
-                    new_height = height
-                    new_width = int(height * target_ratio)
-                    left = (width - new_width) // 2
-                    pil_image = pil_image.crop((left, 0, left + new_width, new_height))
-                else:
-                    new_width = width
-                    new_height = int(width / target_ratio)
-                    top = (height - new_height) // 2
-                    pil_image = pil_image.crop((0, top, new_width, top + new_height))
-                print(f"✅ [IMAGE EDIT] Applied crop: 4:3")
-            elif crop_ratio == '9:16':
-                # 9:16 crop (portrait)
-                target_ratio = 9 / 16
-                if width / height > target_ratio:
-                    new_height = height
-                    new_width = int(height * target_ratio)
-                    left = (width - new_width) // 2
-                    pil_image = pil_image.crop((left, 0, left + new_width, new_height))
-                else:
-                    new_width = width
-                    new_height = int(width / target_ratio)
-                    top = (height - new_height) // 2
-                    pil_image = pil_image.crop((0, top, new_width, top + new_height))
-                print(f"✅ [IMAGE EDIT] Applied crop: 9:16")
-            elif crop_ratio == 'free':
-                # Free crop - use AI for intelligent cropping
-                use_ai = True
-                print(f"🎨 [IMAGE EDIT] Using AI for free-form crop")
-            elif crop_ratio == 'custom':
-                # Custom crop - use AI
-                use_ai = True
-                print(f"🎨 [IMAGE EDIT] Using AI for custom crop")
+
+            if crop_x is not None and crop_y is not None and crop_width is not None and crop_height is not None:
+                # Clamp crop area to image bounds
+                left = max(0, min(width, crop_x))
+                top = max(0, min(height, crop_y))
+                right = max(left + 1, min(width, left + max(1, crop_width)))
+                bottom = max(top + 1, min(height, top + max(1, crop_height)))
+                pil_image = pil_image.crop((left, top, right, bottom))
+                print(f"✅ [IMAGE EDIT] Applied crop box: x={left}, y={top}, w={right-left}, h={bottom-top}")
+            elif crop_ratio is not None:
+                # Apply crop based on ratio (center)
+                if crop_ratio == '1:1':
+                    # Square crop (center)
+                    size = min(width, height)
+                    left = (width - size) // 2
+                    top = (height - size) // 2
+                    pil_image = pil_image.crop((left, top, left + size, top + size))
+                    print(f"✅ [IMAGE EDIT] Applied crop: 1:1 (square)")
+                elif crop_ratio == '16:9':
+                    # 16:9 crop
+                    target_ratio = 16 / 9
+                    if width / height > target_ratio:
+                        new_height = height
+                        new_width = int(height * target_ratio)
+                        left = (width - new_width) // 2
+                        pil_image = pil_image.crop((left, 0, left + new_width, new_height))
+                    else:
+                        new_width = width
+                        new_height = int(width / target_ratio)
+                        top = (height - new_height) // 2
+                        pil_image = pil_image.crop((0, top, new_width, top + new_height))
+                    print(f"✅ [IMAGE EDIT] Applied crop: 16:9")
+                elif crop_ratio == '4:3':
+                    # 4:3 crop
+                    target_ratio = 4 / 3
+                    if width / height > target_ratio:
+                        new_height = height
+                        new_width = int(height * target_ratio)
+                        left = (width - new_width) // 2
+                        pil_image = pil_image.crop((left, 0, left + new_width, new_height))
+                    else:
+                        new_width = width
+                        new_height = int(width / target_ratio)
+                        top = (height - new_height) // 2
+                        pil_image = pil_image.crop((0, top, new_width, top + new_height))
+                    print(f"✅ [IMAGE EDIT] Applied crop: 4:3")
+                elif crop_ratio == '9:16':
+                    # 9:16 crop (portrait)
+                    target_ratio = 9 / 16
+                    if width / height > target_ratio:
+                        new_height = height
+                        new_width = int(height * target_ratio)
+                        left = (width - new_width) // 2
+                        pil_image = pil_image.crop((left, 0, left + new_width, new_height))
+                    else:
+                        new_width = width
+                        new_height = int(width / target_ratio)
+                        top = (height - new_height) // 2
+                        pil_image = pil_image.crop((0, top, new_width, top + new_height))
+                    print(f"✅ [IMAGE EDIT] Applied crop: 9:16")
+                elif crop_ratio == 'free':
+                    # Free crop - use AI for intelligent cropping
+                    use_ai = True
+                    print(f"🎨 [IMAGE EDIT] Using AI for free-form crop")
+                elif crop_ratio == 'custom':
+                    # Custom crop - use AI
+                    use_ai = True
+                    print(f"🎨 [IMAGE EDIT] Using AI for custom crop")
+            else:
+                raise HTTPException(status_code=400, detail="crop requires either crop_ratio or crop box coordinates")
         
         # AI-powered edits - use Gemini/Imagen
         if edit_mode in ['enhance', 'remove-background', 'adjust-colors', 'custom']:
