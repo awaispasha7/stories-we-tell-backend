@@ -36,7 +36,13 @@ if GEMINI_AVAILABLE:
             print(f"⚠️ Failed to initialize Gemini client: {e}")
             gemini_client = None
 
-def build_edit_prompt(edit_mode: str, custom_prompt: Optional[str] = None, intensity: Optional[int] = None) -> str:
+def build_edit_prompt(
+    edit_mode: str, 
+    custom_prompt: Optional[str] = None, 
+    intensity: Optional[int] = None,
+    crop_ratio: Optional[str] = None,
+    rotate_angle: Optional[int] = None
+) -> str:
     """Build the prompt for image editing based on edit mode"""
     
     if edit_mode == 'enhance':
@@ -70,10 +76,16 @@ def build_edit_prompt(edit_mode: str, custom_prompt: Optional[str] = None, inten
             return f"Increase the color saturation of this image by {intensity_percent}%. Make colors more vibrant and vivid."
     
     elif edit_mode == 'crop':
-        return "Crop this image to focus on the main subject, removing unnecessary background while maintaining good composition."
+        if crop_ratio and crop_ratio != 'free' and crop_ratio != 'custom':
+            return f"Crop this image to a {crop_ratio} aspect ratio, focusing on the main subject and maintaining good composition."
+        else:
+            return "Crop this image to focus on the main subject, removing unnecessary background while maintaining good composition."
     
     elif edit_mode == 'rotate':
-        return "Rotate this image 90 degrees clockwise to correct the orientation."
+        angle = rotate_angle if rotate_angle is not None else 90
+        direction = "clockwise" if angle > 0 else "counter-clockwise"
+        abs_angle = abs(angle)
+        return f"Rotate this image {abs_angle} degrees {direction} to correct the orientation."
     
     elif edit_mode == 'custom' and custom_prompt:
         return f"Apply the following edit to this image: {custom_prompt}"
@@ -181,6 +193,8 @@ async def edit_image(
     model: str = Form("gemini-2.5-flash-image"),  # Default to Nano Banana
     custom_prompt: Optional[str] = Form(None),
     intensity: Optional[int] = Form(None),
+    crop_ratio: Optional[str] = Form(None),
+    rotate_angle: Optional[int] = Form(None),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
     x_project_id: Optional[str] = Header(None, alias="X-Project-ID"),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID")
@@ -203,38 +217,105 @@ async def edit_image(
         # Read image bytes
         image_bytes = await image.read()
         
-        # Build edit prompt
-        edit_prompt = build_edit_prompt(edit_mode, custom_prompt, intensity)
-        
-        # For now, we'll use a simpler approach:
-        # Use PIL for basic edits, and Gemini for complex/custom edits
+        # Separate manual edits (PIL) from AI edits (Gemini/Imagen)
         pil_image = Image.open(BytesIO(image_bytes))
         edited_image_bytes = image_bytes  # Default to original
+        use_ai = False
         
-        # Apply basic edits with PIL
+        # Manual/Programmatic edits - handled with PIL only
         if edit_mode == 'brightness' and intensity is not None:
             from PIL import ImageEnhance
             enhancer = ImageEnhance.Brightness(pil_image)
             factor = intensity / 50.0  # Convert 0-100 to 0-2 range
             pil_image = enhancer.enhance(factor)
+            print(f"✅ [IMAGE EDIT] Applied brightness adjustment: {intensity}%")
             
         elif edit_mode == 'contrast' and intensity is not None:
             from PIL import ImageEnhance
             enhancer = ImageEnhance.Contrast(pil_image)
             factor = intensity / 50.0
             pil_image = enhancer.enhance(factor)
+            print(f"✅ [IMAGE EDIT] Applied contrast adjustment: {intensity}%")
             
         elif edit_mode == 'saturation' and intensity is not None:
             from PIL import ImageEnhance
             enhancer = ImageEnhance.Color(pil_image)
             factor = intensity / 50.0
             pil_image = enhancer.enhance(factor)
+            print(f"✅ [IMAGE EDIT] Applied saturation adjustment: {intensity}%")
             
-        elif edit_mode == 'rotate':
-            pil_image = pil_image.rotate(-90, expand=True)
+        elif edit_mode == 'rotate' and rotate_angle is not None:
+            pil_image = pil_image.rotate(-rotate_angle, expand=True)
+            print(f"✅ [IMAGE EDIT] Applied rotation: {rotate_angle}°")
         
-        # For complex edits or custom prompts, use selected model
-        if edit_mode in ['enhance', 'remove-background', 'adjust-colors', 'crop', 'custom']:
+        elif edit_mode == 'crop' and crop_ratio is not None:
+            # Apply crop based on ratio
+            width, height = pil_image.size
+            if crop_ratio == '1:1':
+                # Square crop (center)
+                size = min(width, height)
+                left = (width - size) // 2
+                top = (height - size) // 2
+                pil_image = pil_image.crop((left, top, left + size, top + size))
+                print(f"✅ [IMAGE EDIT] Applied crop: 1:1 (square)")
+            elif crop_ratio == '16:9':
+                # 16:9 crop
+                target_ratio = 16 / 9
+                if width / height > target_ratio:
+                    new_height = height
+                    new_width = int(height * target_ratio)
+                    left = (width - new_width) // 2
+                    pil_image = pil_image.crop((left, 0, left + new_width, new_height))
+                else:
+                    new_width = width
+                    new_height = int(width / target_ratio)
+                    top = (height - new_height) // 2
+                    pil_image = pil_image.crop((0, top, new_width, top + new_height))
+                print(f"✅ [IMAGE EDIT] Applied crop: 16:9")
+            elif crop_ratio == '4:3':
+                # 4:3 crop
+                target_ratio = 4 / 3
+                if width / height > target_ratio:
+                    new_height = height
+                    new_width = int(height * target_ratio)
+                    left = (width - new_width) // 2
+                    pil_image = pil_image.crop((left, 0, left + new_width, new_height))
+                else:
+                    new_width = width
+                    new_height = int(width / target_ratio)
+                    top = (height - new_height) // 2
+                    pil_image = pil_image.crop((0, top, new_width, top + new_height))
+                print(f"✅ [IMAGE EDIT] Applied crop: 4:3")
+            elif crop_ratio == '9:16':
+                # 9:16 crop (portrait)
+                target_ratio = 9 / 16
+                if width / height > target_ratio:
+                    new_height = height
+                    new_width = int(height * target_ratio)
+                    left = (width - new_width) // 2
+                    pil_image = pil_image.crop((left, 0, left + new_width, new_height))
+                else:
+                    new_width = width
+                    new_height = int(width / target_ratio)
+                    top = (height - new_height) // 2
+                    pil_image = pil_image.crop((0, top, new_width, top + new_height))
+                print(f"✅ [IMAGE EDIT] Applied crop: 9:16")
+            elif crop_ratio == 'free':
+                # Free crop - use AI for intelligent cropping
+                use_ai = True
+                print(f"🎨 [IMAGE EDIT] Using AI for free-form crop")
+            elif crop_ratio == 'custom':
+                # Custom crop - use AI
+                use_ai = True
+                print(f"🎨 [IMAGE EDIT] Using AI for custom crop")
+        
+        # AI-powered edits - use Gemini/Imagen
+        if edit_mode in ['enhance', 'remove-background', 'adjust-colors', 'custom']:
+            use_ai = True
+        
+        # Apply AI edits if needed
+        if use_ai:
+            edit_prompt = build_edit_prompt(edit_mode, custom_prompt, intensity, crop_ratio, rotate_angle)
             try:
                 edited_image_bytes = await edit_image_with_gemini(
                     image_bytes,
@@ -242,25 +323,13 @@ async def edit_image(
                     model,  # Pass the selected model
                     image.content_type
                 )
+                print(f"✅ [IMAGE EDIT] AI edit completed using {model}")
             except HTTPException as e:
-                # If model fails, fall back to PIL enhancement
-                if e.status_code == 501:
-                    print(f"⚠️ [IMAGE EDIT] Model {model} not available for editing, using PIL fallback")
-                    # For now, apply a basic enhancement
-                    from PIL import ImageEnhance
-                    enhancer = ImageEnhance.Sharpness(pil_image)
-                    pil_image = enhancer.enhance(1.2)
-                    enhancer = ImageEnhance.Color(pil_image)
-                    pil_image = enhancer.enhance(1.1)
-                else:
-                    # Re-raise other HTTP exceptions
-                    raise
-        
-        # Convert PIL image back to bytes if we used PIL
-        if edit_mode in ['brightness', 'contrast', 'saturation', 'rotate'] or (
-            edit_mode in ['enhance', 'remove-background', 'adjust-colors', 'crop', 'custom'] 
-            and edited_image_bytes == image_bytes
-        ):
+                # If model fails, raise the error
+                print(f"❌ [IMAGE EDIT] AI edit failed: {e.detail}")
+                raise
+        else:
+            # Convert PIL image back to bytes for manual edits
             output = BytesIO()
             # Preserve format
             format = pil_image.format or 'JPEG'
@@ -269,6 +338,7 @@ async def edit_image(
             else:
                 pil_image.save(output, format=format)
             edited_image_bytes = output.getvalue()
+            print(f"✅ [IMAGE EDIT] Manual edit completed")
         
         # Upload edited image to Supabase
         supabase = get_supabase_client()
@@ -302,12 +372,29 @@ async def edit_image(
         public_url = public_url_response if isinstance(public_url_response, str) else public_url_response.get('publicUrl', '')
         
         # Store asset metadata
+        if use_ai:
+            edit_prompt = build_edit_prompt(edit_mode, custom_prompt, intensity, crop_ratio, rotate_angle)
+            notes = f"Edited image: {edit_mode} using {model} - {edit_prompt[:100]}"
+        else:
+            if edit_mode == 'brightness':
+                notes = f"Edited image: {edit_mode} at {intensity}% (Manual/PIL)"
+            elif edit_mode == 'contrast':
+                notes = f"Edited image: {edit_mode} at {intensity}% (Manual/PIL)"
+            elif edit_mode == 'saturation':
+                notes = f"Edited image: {edit_mode} at {intensity}% (Manual/PIL)"
+            elif edit_mode == 'rotate':
+                notes = f"Edited image: {edit_mode} by {rotate_angle}° (Manual/PIL)"
+            elif edit_mode == 'crop':
+                notes = f"Edited image: {edit_mode} to {crop_ratio} (Manual/PIL)"
+            else:
+                notes = f"Edited image: {edit_mode} (Manual/PIL)"
+        
         asset_record = {
             "id": asset_id,
             "project_id": x_project_id,
             "type": "image",
             "uri": public_url,
-            "notes": f"Edited image: {edit_mode} using {model} - {edit_prompt[:100]}"
+            "notes": notes
         }
         
         db_response = supabase.table("assets").insert([asset_record]).execute()
@@ -317,12 +404,19 @@ async def edit_image(
         
         print(f"✅ [IMAGE EDIT] Image edited and uploaded successfully: {edited_filename}")
         
+        # Determine what was used for editing
+        if use_ai:
+            processing_method = f"AI ({model})"
+        else:
+            processing_method = "Manual (PIL)"
+        
         return {
             "success": True,
             "asset_id": asset_id,
             "edited_image_url": public_url,
             "edit_mode": edit_mode,
-            "model_used": model,
+            "model_used": model if use_ai else "manual",
+            "processing_method": processing_method,
             "message": "Image edited successfully"
         }
         
