@@ -355,21 +355,56 @@ async def edit_image(
         # Upload to Supabase Storage
         file_path = f"{x_project_id or 'temp'}/{asset_id}/{edited_filename}"
         
-        upload_response = supabase.storage.from_(bucket_name).upload(
-            file_path,
-            edited_image_bytes,
-            file_options={
-                "content-type": image.content_type,
-                "upsert": False
-            }
-        )
+        try:
+            # Upload file - if no exception is raised, upload succeeded
+            supabase.storage.from_(bucket_name).upload(
+                file_path,
+                edited_image_bytes,
+                file_options={
+                    "content-type": image.content_type,
+                    "upsert": False
+                }
+            )
+            # Just log that upload succeeded - don't store or access response
+            print(f"✅ [IMAGE EDIT] Upload successful to: {file_path}")
+        except Exception as upload_error:
+            print(f"❌ [IMAGE EDIT] Upload error: {upload_error}")
+            import traceback
+            print(f"❌ [IMAGE EDIT] Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload edited image: {str(upload_error)}")
         
-        if upload_response.get('error'):
-            raise HTTPException(status_code=500, detail=f"Failed to upload edited image: {upload_response['error']}")
-        
-        # Get public URL
-        public_url_response = supabase.storage.from_(bucket_name).get_public_url(file_path)
-        public_url = public_url_response if isinstance(public_url_response, str) else public_url_response.get('publicUrl', '')
+        # Get public URL - handle different response formats
+        try:
+            public_url_response = supabase.storage.from_(bucket_name).get_public_url(file_path)
+            
+            # Handle different response formats
+            if isinstance(public_url_response, str):
+                public_url = public_url_response
+            elif isinstance(public_url_response, dict):
+                public_url = public_url_response.get('publicUrl') or public_url_response.get('public_url') or public_url_response.get('url', '')
+            elif hasattr(public_url_response, 'publicUrl'):
+                public_url = public_url_response.publicUrl
+            elif hasattr(public_url_response, 'public_url'):
+                public_url = public_url_response.public_url
+            elif hasattr(public_url_response, 'url'):
+                public_url = public_url_response.url
+            else:
+                # Fallback: construct URL manually
+                storage_url = os.getenv("SUPABASE_URL", "")
+                if storage_url:
+                    public_url = f"{storage_url}/storage/v1/object/public/{bucket_name}/{file_path}"
+                else:
+                    raise ValueError("Could not determine public URL")
+            
+            if not public_url:
+                raise ValueError("Public URL is empty")
+                
+            print(f"✅ [IMAGE EDIT] Public URL: {public_url}")
+        except Exception as url_error:
+            print(f"❌ [IMAGE EDIT] Error getting public URL: {url_error}")
+            import traceback
+            print(f"❌ [IMAGE EDIT] Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Failed to get public URL: {str(url_error)}")
         
         # Store asset metadata
         if use_ai:
